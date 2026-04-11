@@ -1,0 +1,12 @@
+node_modules/
+.next/
+build/
+dist/
+coverage/
+.playwright-mcp/
+tmp/
+tsconfig.tsbuildinfo
+.DS_Store
+*.log
+.env*
+!.env.example

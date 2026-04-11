@@ -1,0 +1,7 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+.react-pdf__Page__textContent {
+  user-select: text !important;
+  cursor: text;
+}

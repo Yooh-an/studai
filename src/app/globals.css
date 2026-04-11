@@ -1,0 +1,9 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+@import "react-pdf/dist/Page/AnnotationLayer.css";
+@import "react-pdf/dist/Page/TextLayer.css";
+
+.react-pdf__Page__textContent {
+  user-select: text !important;
+  cursor: text;
+}

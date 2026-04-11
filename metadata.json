@@ -1,0 +1,5 @@
+{
+  "name": "Codex Study Platform",
+  "description": "대용량 PDF 및 EPUB 문서를 학습하고 LLM과 대화할 수 있는 웹 기반 SaaS입니다. OCR, 텍스트 선택 질문, 형광펜 등의 기능을 제공합니다.",
+  "requestFramePermissions": []
+}
