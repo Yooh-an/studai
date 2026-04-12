@@ -5,6 +5,7 @@ dist/
 coverage/
 .playwright-mcp/
 tmp/
+.gstack/
 tsconfig.tsbuildinfo
 .DS_Store
 *.log
