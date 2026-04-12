@@ -263,7 +263,7 @@ export function ChatPanel() {
         {chatMessages.map((msg) => (
           <div
             key={msg.id}
-            className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}
+            className={`flex min-w-0 gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}
           >
             <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
               msg.role === 'user' ? 'bg-blue-100' : 'bg-gray-100'
@@ -275,10 +275,10 @@ export function ChatPanel() {
               )}
             </div>
             <div
-              className={`max-w-[82%] rounded-2xl px-4 py-2 ${
+              className={`min-w-0 max-w-[82%] rounded-2xl px-4 py-2 ${
                 msg.role === 'user'
-                  ? 'rounded-tr-none bg-blue-600 text-white'
-                  : 'rounded-tl-none bg-gray-100 text-gray-900 prose prose-sm max-w-none'
+                  ? 'break-words rounded-tr-none bg-blue-600 text-white'
+                  : 'chat-markdown break-words rounded-tl-none bg-gray-100 text-gray-900 prose prose-sm'
               }`}
               style={{ fontSize: `${chatFontSize}px` }}
             >

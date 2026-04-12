@@ -5,3 +5,20 @@
   user-select: text !important;
   cursor: text;
 }
+
+.chat-markdown,
+.chat-markdown :where(p, li, blockquote, a, code, td, th) {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.chat-markdown :where(pre) {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.chat-markdown :where(table) {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
