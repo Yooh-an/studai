@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, CheckCircle2, Loader2, Palette, RefreshCw, Server } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { DEFAULT_AI_PROVIDER, readStoredAIProvider, writeStoredAIProvider } from '../lib/providerPreferences';
@@ -160,9 +160,6 @@ export function SettingsPage() {
               </button>
             </div>
 
-            <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs text-blue-800">
-              This Next.js app now uses built-in same-origin API routes (`/api/*`). No separate bridge URL is required.
-            </div>
 
             <div className="rounded-xl bg-gray-50 px-4 py-4">
               {providerStatus === null ? (
