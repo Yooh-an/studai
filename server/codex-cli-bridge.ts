@@ -4,6 +4,8 @@ import os from 'os';
 import path from 'path';
 import { spawn } from 'child_process';
 
+import { buildCodexPrompt } from '../src/lib/server/codexPrompt';
+
 const app = express();
 const port = Number(process.env.PORT || 8787);
 const CODEX_HOME = process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
@@ -165,22 +167,6 @@ async function fetchCodexModels() {
   }
 }
 
-function buildPrompt(input: string, messages: ChatMessageInput[]) {
-  const recentMessages = messages.slice(-12);
-  const transcript = recentMessages
-    .map((message) => `${message.role === 'assistant' ? 'Assistant' : 'User'}: ${message.content}`)
-    .join('\n\n');
-
-  return [
-    'You are helping a user read and understand a document in a study workspace.',
-    'Answer clearly and use Markdown when useful.',
-    transcript ? `Conversation so far:\n\n${transcript}` : '',
-    `Latest user request:\n\n${input}`,
-  ]
-    .filter(Boolean)
-    .join('\n\n');
-}
-
 async function runCodexTurn(input: string, messages: ChatMessageInput[], model?: string) {
   const executable = await resolveCodexExecutable();
   const args = [
@@ -198,7 +184,7 @@ async function runCodexTurn(input: string, messages: ChatMessageInput[], model?:
     args.push('--model', model);
   }
 
-  args.push(buildPrompt(input, messages));
+  args.push(buildCodexPrompt({ input, messages }));
 
   return await new Promise<{ text: string; model?: string }>((resolve, reject) => {
     const child = spawn(executable.command, args, {

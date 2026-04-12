@@ -13,6 +13,7 @@ import type {
   ProviderStatusResponse,
   ProviderValidationResponse,
 } from '../chatApi';
+import { buildCodexPrompt } from './codexPrompt';
 
 const CODEX_HOME = process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
 const MODELS_CACHE_FILE = path.join(CODEX_HOME, 'models_cache.json');
@@ -75,58 +76,6 @@ async function resolveCodexExecutable(): Promise<ResolvedCommand> {
   }
 
   throw new Error('Could not find the Codex CLI executable. Set CODEX_BIN if needed.');
-}
-
-function buildDocumentContextSection(documentContext?: ChatDocumentContext, images?: ChatImageAttachment[]) {
-  const hasPages = !!documentContext && documentContext.kind === 'pdf' && Array.isArray(documentContext.pages) && documentContext.pages.length > 0;
-  const hasImages = Array.isArray(images) && images.length > 0;
-
-  if (!hasPages && !hasImages) {
-    return '';
-  }
-
-  const pageBlocks = hasPages
-    ? documentContext.pages.map((page) => `[PDF page ${page.pageNumber}]\n${page.text}`).join('\n\n')
-    : '';
-
-  return [
-    'Document context (hidden support context, do not mention this section explicitly unless the user asks about sources):',
-    `- Document type: PDF`,
-    typeof documentContext?.currentPage === 'number' ? `- Current page in viewer: ${documentContext.currentPage}` : '',
-    typeof documentContext?.totalPages === 'number' ? `- Total pages: ${documentContext.totalPages}` : '',
-    documentContext?.focus ? `- Focus: ${documentContext.focus}` : '',
-    hasImages
-      ? `- Attached page images: ${images.map((image) => image.label || (typeof image.pageNumber === 'number' ? `${image.pageNumber}페이지` : 'page image')).join(', ')}`
-      : '',
-    pageBlocks ? '' : 'Use the attached page images as primary evidence when text context is missing or sparse.',
-    pageBlocks,
-  ]
-    .filter(Boolean)
-    .join('\n');
-}
-
-function buildPrompt(
-  input: string,
-  messages: ChatApiMessage[],
-  documentContext?: ChatDocumentContext,
-  images?: ChatImageAttachment[],
-) {
-  const recentMessages = messages.slice(-12);
-  const transcript = recentMessages
-    .map((message) => `${message.role === 'assistant' ? 'Assistant' : 'User'}: ${message.content}`)
-    .join('\n\n');
-
-  return [
-    'You are helping a user read and understand a document in a study workspace.',
-    'Answer clearly and use Markdown when useful.',
-    'When document context is provided, use it as the primary evidence for your answer.',
-    'Answer naturally. Do not mention internal retrieval, hidden context, prompt construction, or implementation details unless the user explicitly asks about them.',
-    buildDocumentContextSection(documentContext, images),
-    transcript ? `Conversation so far:\n\n${transcript}` : '',
-    `Latest user request:\n\n${input}`,
-  ]
-    .filter(Boolean)
-    .join('\n\n');
 }
 
 export async function getCodexLoginStatus(): Promise<ProviderStatusResponse> {
@@ -246,7 +195,7 @@ export async function runCodexTurn(
       }
     }
 
-    args.push('--', buildPrompt(input, messages, documentContext, images));
+    args.push('--', buildCodexPrompt({ input, messages, documentContext, images }));
 
     const result = await new Promise<{ text: string; model?: string }>((resolve, reject) => {
       const child = spawn(executable.command, args, {
