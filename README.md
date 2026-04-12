@@ -4,7 +4,7 @@ Studai is a local-first study workspace for reading PDF and EPUB documents, anno
 
 ## Highlights
 
-- **PDF reader** with page navigation, zoom controls, annotations, and restored reading state
+- **PDF reader** with page navigation, zoom controls, annotations, restored reading state, and working internal TOC/bookmark links
 - **EPUB reader** powered by `react-reader` with saved reading position
 - **Document-aware AI chat** that can answer natural-language PDF questions like current page, specific pages, and short page ranges
 - **Page-image fallback for scan PDFs** so figure/table questions can still use the currently viewed page image when extractable text is sparse
@@ -79,8 +79,9 @@ npm run start
 
 ## PDF Chat Behavior
 
-Studai's PDF chat flow is document-aware:
+Studai's PDF reading and chat flow is document-aware:
 
+- internal PDF navigation links such as table-of-contents/bookmark jumps are preserved through the viewer, including destination-based links and common named page actions
 - natural-language requests such as `현재 페이지 설명해줘`, `15페이지 요약해줘`, or `10~12페이지 핵심 정리해줘` are resolved against the open PDF
 - figure/table references without explicit page wording prefer the **currently viewed page** first
 - text PDFs use extracted page text as primary evidence
@@ -90,6 +91,7 @@ Studai's PDF chat flow is document-aware:
 Current limitations:
 
 - chapter/section-level understanding is not indexed yet
+- some advanced PDF actions beyond normal internal destinations and common named page actions may still depend on upstream `react-pdf`/`pdf.js` behavior
 - broad whole-document requests on scan PDFs still depend on page-local context more than full-document retrieval
 
 ## AI Provider Setup
