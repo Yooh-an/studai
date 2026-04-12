@@ -20,8 +20,10 @@ import { useAppContext } from '../context/AppContext';
 import {
   type AnnotationStroke,
   type AnnotationTool,
+  buildSelectionHighlightStrokes,
   buildStroke,
   eraseStrokeAtPoint,
+  removeSelectionHighlightStrokes,
   strokeToSvgPath,
   updateStrokeWithPoint,
 } from '../lib/pdfAnnotations';
@@ -170,6 +172,7 @@ export function PdfViewer({ file }: PdfViewerProps) {
   const {
     setPopupPosition,
     setSelectedText,
+    setSelectionHighlightAction,
     setCurrentPdfPage,
     setCurrentPdfNumPages,
   } = useAppContext();
@@ -198,13 +201,14 @@ export function PdfViewer({ file }: PdfViewerProps) {
     setIsDocumentFocused(false);
     setPopupPosition(null);
     setSelectedText('');
+    setSelectionHighlightAction(null);
     setCurrentPdfPage(1);
     setCurrentPdfNumPages(null);
     setPageInput('1');
     setHasLoadedCachedStrokes(true);
 
     return () => URL.revokeObjectURL(url);
-  }, [documentCacheId, file, setCurrentPdfNumPages, setCurrentPdfPage, setPopupPosition, setSelectedText]);
+  }, [documentCacheId, file, setCurrentPdfNumPages, setCurrentPdfPage, setPopupPosition, setSelectedText, setSelectionHighlightAction]);
 
   useEffect(() => {
     if (!hasLoadedCachedStrokes) return;
@@ -329,8 +333,9 @@ export function PdfViewer({ file }: PdfViewerProps) {
   const resetTransientUi = useCallback(() => {
     setPopupPosition(null);
     setSelectedText('');
+    setSelectionHighlightAction(null);
     setFloatingToolbarPanel(null);
-  }, [setPopupPosition, setSelectedText]);
+  }, [setPopupPosition, setSelectedText, setSelectionHighlightAction]);
 
   const changePage = useCallback((offset: number) => {
     setPageNumber((prevPageNumber) => prevPageNumber + offset);
@@ -536,15 +541,80 @@ export function PdfViewer({ file }: PdfViewerProps) {
     };
   };
 
+  const getCurrentPageRect = () => {
+    const rect = pageRef.current?.getBoundingClientRect();
+    if (!rect || !rect.width || !rect.height) return null;
+
+    return {
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height,
+    };
+  };
+
+  const getSelectionRects = (range: Range) =>
+    Array.from(range.getClientRects())
+      .filter((rect) => rect.width > 0 && rect.height > 0)
+      .map((rect) => ({
+        left: rect.left,
+        top: rect.top,
+        width: rect.width,
+        height: rect.height,
+      }));
+
   const handleMouseUp = () => {
     if (activeTool !== 'select') return;
 
     const selection = window.getSelection();
     const text = selection?.toString().trim();
 
-    if (text && text.length > 0) {
+    if (text && text.length > 0 && selection && selection.rangeCount > 0) {
       const range = selection.getRangeAt(0);
       const rect = range.getBoundingClientRect();
+      const pageRect = getCurrentPageRect();
+      const selectionRects = getSelectionRects(range);
+
+      if (pageRect && selectionRects.length > 0) {
+        const remainingStrokes = removeSelectionHighlightStrokes({
+          strokes,
+          pageNumber,
+          selectionRects,
+          pageRect,
+        });
+
+        if (remainingStrokes.length !== strokes.length) {
+          setStrokes(remainingStrokes);
+          setPopupPosition(null);
+          setSelectedText('');
+          setSelectionHighlightAction(null);
+          window.getSelection()?.removeAllRanges();
+          return;
+        }
+
+        setSelectionHighlightAction(() => {
+          const highlightStrokes = buildSelectionHighlightStrokes({
+            pageNumber,
+            color: activeColor,
+            selectionRects,
+            pageRect,
+          });
+
+          if (highlightStrokes.length === 0) return;
+
+          setStrokes((prevStrokes) => [
+            ...removeSelectionHighlightStrokes({
+              strokes: prevStrokes,
+              pageNumber,
+              selectionRects,
+              pageRect,
+            }),
+            ...highlightStrokes,
+          ]);
+        });
+      } else {
+        setSelectionHighlightAction(null);
+      }
 
       setPopupPosition({
         x: rect.left + rect.width / 2,
@@ -556,6 +626,7 @@ export function PdfViewer({ file }: PdfViewerProps) {
 
     setPopupPosition(null);
     setSelectedText('');
+    setSelectionHighlightAction(null);
   };
 
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -567,6 +638,7 @@ export function PdfViewer({ file }: PdfViewerProps) {
     isPointerActiveRef.current = true;
     overlayRef.current?.setPointerCapture(event.pointerId);
     setPopupPosition(null);
+    setSelectionHighlightAction(null);
     window.getSelection()?.removeAllRanges();
 
     if (activeTool === 'eraser') {

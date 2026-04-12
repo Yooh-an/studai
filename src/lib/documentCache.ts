@@ -80,6 +80,7 @@ function isAnnotationStroke(value: unknown): value is AnnotationStroke {
     typeof stroke.id === 'string' &&
     typeof stroke.pageNumber === 'number' &&
     (stroke.tool === 'pen' || stroke.tool === 'highlighter' || stroke.tool === 'underline') &&
+    (stroke.source === undefined || stroke.source === 'freehand' || stroke.source === 'selection') &&
     typeof stroke.color === 'string' &&
     typeof stroke.size === 'number' &&
     typeof stroke.opacity === 'number' &&

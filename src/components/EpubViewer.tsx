@@ -12,7 +12,7 @@ export function EpubViewer({ file }: EpubViewerProps) {
   const [location, setLocation] = useState<string | number>(0);
   const [hasLoadedCachedLocation, setHasLoadedCachedLocation] = useState(false);
   const [fileUrl, setFileUrl] = useState<string | ArrayBuffer | null>(null);
-  const { setPopupPosition, setSelectedText } = useAppContext();
+  const { setPopupPosition, setSelectedText, setSelectionHighlightAction } = useAppContext();
   const [rendition, setRendition] = useState<any>(null);
 
   useEffect(() => {
@@ -44,6 +44,7 @@ export function EpubViewer({ file }: EpubViewerProps) {
               y: iframeRect.top + rect.top - 10
             });
             setSelectedText(text);
+            setSelectionHighlightAction(null);
           }
         });
       };
@@ -53,13 +54,14 @@ export function EpubViewer({ file }: EpubViewerProps) {
       // Clear selection on click inside iframe
       rendition.on('click', () => {
         setPopupPosition(null);
+        setSelectionHighlightAction(null);
       });
 
       return () => {
         rendition.off('selected', handleSelected);
       };
     }
-  }, [rendition, setPopupPosition, setSelectedText]);
+  }, [rendition, setPopupPosition, setSelectedText, setSelectionHighlightAction]);
 
   if (!fileUrl) {
     return (

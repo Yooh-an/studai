@@ -1,9 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  buildSelectionHighlightStrokes,
   buildStroke,
   eraseStrokeAtPoint,
   getStrokeVisuals,
+  removeSelectionHighlightStrokes,
   updateStrokeWithPoint,
 } from './pdfAnnotations';
 
@@ -100,5 +102,73 @@ test('eraseStrokeAtPoint removes only the touched stroke from the current page',
   assert.deepEqual(
     remaining.map((stroke) => stroke.id),
     [untouched.id, otherPage.id],
+  );
+});
+
+test('buildSelectionHighlightStrokes converts text selection rects into page-relative highlighter strokes', () => {
+  const strokes = buildSelectionHighlightStrokes({
+    pageNumber: 3,
+    color: '#facc15',
+    selectionRects: [
+      { left: 120, top: 220, width: 180, height: 24 },
+      { left: 120, top: 252, width: 96, height: 24 },
+    ],
+    pageRect: { left: 100, top: 200, width: 400, height: 600 },
+  });
+
+  assert.equal(strokes.length, 2);
+  assert.equal(strokes[0].tool, 'highlighter');
+  assert.equal(strokes[0].source, 'selection');
+  assert.equal(strokes[0].size, 24);
+  assert.deepEqual(strokes[0].points, [
+    { x: 0.05, y: 0.05333333333333334 },
+    { x: 0.5, y: 0.05333333333333334 },
+  ]);
+  assert.deepEqual(strokes[1].points, [
+    { x: 0.05, y: 0.10666666666666667 },
+    { x: 0.29, y: 0.10666666666666667 },
+  ]);
+});
+
+test('removeSelectionHighlightStrokes removes only selection-generated highlights touched by a new text selection', () => {
+  const [selectionHighlight] = buildSelectionHighlightStrokes({
+    pageNumber: 1,
+    color: '#facc15',
+    selectionRects: [{ left: 120, top: 220, width: 180, height: 24 }],
+    pageRect: { left: 100, top: 200, width: 400, height: 600 },
+  });
+
+  const freehandHighlight = updateStrokeWithPoint(
+    buildStroke({
+      pageNumber: 1,
+      tool: 'highlighter',
+      color: '#facc15',
+      size: 10,
+      point: { x: 0.1, y: 0.25 },
+    }),
+    { x: 0.4, y: 0.25 },
+  );
+
+  const penStroke = updateStrokeWithPoint(
+    buildStroke({
+      pageNumber: 1,
+      tool: 'pen',
+      color: '#111827',
+      size: 4,
+      point: { x: 0.2, y: 0.7 },
+    }),
+    { x: 0.35, y: 0.72 },
+  );
+
+  const remaining = removeSelectionHighlightStrokes({
+    strokes: [selectionHighlight, freehandHighlight, penStroke],
+    pageNumber: 1,
+    selectionRects: [{ left: 120, top: 220, width: 180, height: 24 }],
+    pageRect: { left: 100, top: 200, width: 400, height: 600 },
+  });
+
+  assert.deepEqual(
+    remaining.map((stroke) => stroke.id),
+    [freehandHighlight.id, penStroke.id],
   );
 });

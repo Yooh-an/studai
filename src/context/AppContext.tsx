@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useMemo, useState, ReactNode } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState, ReactNode } from 'react';
 import { getDocumentCacheId, loadCachedChatMessages, saveCachedChatMessages } from '../lib/documentCache';
 
 export type FileType = 'pdf' | 'epub' | null;
@@ -34,6 +34,8 @@ interface AppContextType {
   
   popupPosition: { x: number; y: number } | null;
   setPopupPosition: (pos: { x: number; y: number } | null) => void;
+  selectionHighlightAction: (() => void) | null;
+  setSelectionHighlightAction: (action: (() => void) | null) => void;
   
   chatMessages: Message[];
   addMessage: (msg: Message) => void;
@@ -55,6 +57,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [fileType, setFileType] = useState<FileType>(null);
   const [selectedText, setSelectedText] = useState('');
   const [popupPosition, setPopupPosition] = useState<{ x: number; y: number } | null>(null);
+  const [selectionHighlightAction, setSelectionHighlightActionState] = useState<(() => void) | null>(null);
   const [currentPdfPage, setCurrentPdfPage] = useState<number | null>(null);
   const [currentPdfNumPages, setCurrentPdfNumPages] = useState<number | null>(null);
   const [chatMessages, setChatMessages] = useState<Message[]>(DEFAULT_CHAT_MESSAGES);
@@ -85,39 +88,66 @@ export function AppProvider({ children }: { children: ReactNode }) {
     saveCachedChatMessages(documentCacheId, chatMessages);
   }, [chatMessages, documentCacheId, hasLoadedCachedChat]);
 
-  const login = () => {
+  const login = useCallback(() => {
     setIsAuthenticated(true);
     setCurrentView('workspace');
-  };
+  }, []);
 
-  const logout = () => {
+  const logout = useCallback(() => {
     setIsAuthenticated(false);
     setCurrentView('workspace');
-  };
+  }, []);
   
-  const setFile = (file: File | null, type: FileType) => {
+  const setFile = useCallback((file: File | null, type: FileType) => {
     setCurrentFile(file);
     setFileType(type);
+    setSelectedText('');
+    setPopupPosition(null);
+    setSelectionHighlightActionState(null);
     setCurrentPdfPage(type === 'pdf' && file ? 1 : null);
     setCurrentPdfNumPages(null);
-  };
+  }, []);
 
-  const addMessage = (msg: Message) => {
+  const addMessage = useCallback((msg: Message) => {
     setChatMessages((prev) => [...prev, { ...msg, pendingResponse: msg.pendingResponse ?? false }]);
-  };
+  }, []);
+
+  const setSelectionHighlightAction = useCallback((action: (() => void) | null) => {
+    setSelectionHighlightActionState(() => action);
+  }, []);
+
+  const contextValue = useMemo(() => ({
+    isAuthenticated, login, logout,
+    currentView, setCurrentView,
+    currentFile, fileType, setFile,
+    currentPdfPage, setCurrentPdfPage,
+    currentPdfNumPages, setCurrentPdfNumPages,
+    selectedText, setSelectedText,
+    popupPosition, setPopupPosition,
+    selectionHighlightAction, setSelectionHighlightAction,
+    chatMessages, addMessage,
+    isChatOpen, setChatOpen,
+  }), [
+    isAuthenticated,
+    login,
+    logout,
+    currentView,
+    currentFile,
+    fileType,
+    setFile,
+    currentPdfPage,
+    currentPdfNumPages,
+    selectedText,
+    popupPosition,
+    selectionHighlightAction,
+    setSelectionHighlightAction,
+    chatMessages,
+    addMessage,
+    isChatOpen,
+  ]);
 
   return (
-    <AppContext.Provider value={{
-      isAuthenticated, login, logout,
-      currentView, setCurrentView,
-      currentFile, fileType, setFile,
-      currentPdfPage, setCurrentPdfPage,
-      currentPdfNumPages, setCurrentPdfNumPages,
-      selectedText, setSelectedText,
-      popupPosition, setPopupPosition,
-      chatMessages, addMessage,
-      isChatOpen, setChatOpen
-    }}>
+    <AppContext.Provider value={contextValue}>
       {children}
     </AppContext.Provider>
   );
