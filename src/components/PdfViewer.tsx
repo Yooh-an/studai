@@ -40,6 +40,7 @@ import {
   isScrollAtGestureBoundary,
   normalizeWheelDelta,
 } from '../lib/documentGestures';
+import { getPageNumberForPdfNamedAction } from '../lib/pdfNamedActions';
 import { primePdfTextIndex } from '../lib/pdfText';
 
 // Initialize PDF.js worker
@@ -52,6 +53,7 @@ interface PdfViewerProps {
 const TOOLBAR_COLORS = ['#2563eb', '#111827', '#ef4444', '#16a34a', '#f59e0b', '#a855f7'];
 const PAGE_GESTURE_THRESHOLD = 96;
 const PAGE_GESTURE_COOLDOWN_MS = 320;
+
 
 interface ToolButtonProps {
   active: boolean;
@@ -137,6 +139,7 @@ export function PdfViewer({ file }: PdfViewerProps) {
   const [hasLoadedCachedStrokes, setHasLoadedCachedStrokes] = useState(false);
   const [draftStroke, setDraftStroke] = useState<AnnotationStroke | null>(null);
   const [pageSize, setPageSize] = useState({ width: 0, height: 0 });
+  const [pageInput, setPageInput] = useState('1');
   const [floatingToolbarPosition, setFloatingToolbarPosition] = useState({ x: 24, y: 88 });
   const [isFloatingToolbarDragging, setIsFloatingToolbarDragging] = useState(false);
   const [floatingToolbarPanel, setFloatingToolbarPanel] = useState<'tool' | 'color' | 'size' | null>(null);
@@ -145,6 +148,8 @@ export function PdfViewer({ file }: PdfViewerProps) {
   const viewerRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const pageRef = useRef<HTMLDivElement>(null);
+  const documentRef = useRef<React.ElementRef<typeof Document> | null>(null);
+  const pdfDocumentRef = useRef<any>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const floatingToolbarRef = useRef<HTMLDivElement>(null);
   const documentCacheId = useMemo(() => getDocumentCacheId(file), [file]);
@@ -195,6 +200,7 @@ export function PdfViewer({ file }: PdfViewerProps) {
     setSelectedText('');
     setCurrentPdfPage(1);
     setCurrentPdfNumPages(null);
+    setPageInput('1');
     setHasLoadedCachedStrokes(true);
 
     return () => URL.revokeObjectURL(url);
@@ -233,7 +239,59 @@ export function PdfViewer({ file }: PdfViewerProps) {
     return () => observer.disconnect();
   }, [pageNumber, scale, fileUrl]);
 
-  function onDocumentLoadSuccess({ numPages }: { numPages: number }) {
+  const resolvePdfDestinationPageNumber = useCallback(async ({
+    pageNumber: targetPageNumber,
+    pageIndex,
+    dest,
+  }: {
+    pageNumber?: number;
+    pageIndex?: number;
+    dest?: unknown;
+  }) => {
+    let resolvedPageNumber =
+      typeof targetPageNumber === 'number' && Number.isFinite(targetPageNumber)
+        ? targetPageNumber
+        : typeof pageIndex === 'number' && Number.isFinite(pageIndex)
+          ? pageIndex + 1
+          : null;
+
+    if (resolvedPageNumber !== null) {
+      return resolvedPageNumber;
+    }
+
+    if (!pdfDocumentRef.current || !dest) {
+      return null;
+    }
+
+    try {
+      let explicitDest = dest;
+      if (typeof explicitDest === 'string') {
+        explicitDest = await pdfDocumentRef.current.getDestination(explicitDest);
+      }
+
+      if (!Array.isArray(explicitDest) || !explicitDest[0]) {
+        return null;
+      }
+
+      const pageRef = explicitDest[0];
+      if (typeof pageRef === 'number' && Number.isFinite(pageRef)) {
+        return pageRef + 1;
+      }
+
+      if (typeof pageRef === 'object') {
+        const resolvedPageIndex = await pdfDocumentRef.current.getPageIndex(pageRef);
+        return resolvedPageIndex + 1;
+      }
+    } catch (error) {
+      console.error('Failed to resolve PDF destination:', error);
+    }
+
+    return null;
+  }, []);
+
+  function onDocumentLoadSuccess(pdf: { numPages: number }) {
+    const { numPages } = pdf;
+    pdfDocumentRef.current = pdf;
     setNumPages(numPages);
     setCurrentPdfNumPages(numPages);
     setPageNumber(Math.min(Math.max(cachedPageNumber ?? 1, 1), numPages));
@@ -249,6 +307,7 @@ export function PdfViewer({ file }: PdfViewerProps) {
 
   useEffect(() => {
     setCurrentPdfPage(pageNumber);
+    setPageInput(String(pageNumber));
   }, [pageNumber, setCurrentPdfPage]);
 
   const clampFloatingToolbarPosition = useCallback((position: { x: number; y: number }) => {
@@ -267,16 +326,101 @@ export function PdfViewer({ file }: PdfViewerProps) {
     };
   }, []);
 
-  const changePage = (offset: number) => {
-    setPageNumber((prevPageNumber) => prevPageNumber + offset);
+  const resetTransientUi = useCallback(() => {
     setPopupPosition(null);
     setSelectedText('');
     setFloatingToolbarPanel(null);
-  };
+  }, [setPopupPosition, setSelectedText]);
+
+  const changePage = useCallback((offset: number) => {
+    setPageNumber((prevPageNumber) => prevPageNumber + offset);
+    resetTransientUi();
+  }, [resetTransientUi]);
+
+  const navigateToPage = useCallback((nextPageNumber: number) => {
+    if (numPages === null) return;
+
+    const clampedPage = Math.min(Math.max(nextPageNumber, 1), numPages);
+    if (clampedPage === pageNumber) {
+      return;
+    }
+
+    pendingPageAnchorRef.current = 'top';
+    setPageNumber(clampedPage);
+    resetTransientUi();
+  }, [numPages, pageNumber, resetTransientUi]);
+
+  const handleDocumentItemClick = useCallback(async ({
+    pageNumber: targetPageNumber,
+    pageIndex,
+    dest,
+  }: {
+    pageNumber?: number;
+    pageIndex?: number;
+    dest?: unknown;
+  }) => {
+    const resolvedPageNumber = await resolvePdfDestinationPageNumber({
+      pageNumber: targetPageNumber,
+      pageIndex,
+      dest,
+    });
+
+    if (resolvedPageNumber !== null) {
+      navigateToPage(resolvedPageNumber);
+    }
+  }, [navigateToPage, resolvePdfDestinationPageNumber]);
 
   const previousPage = () => changePage(-1);
   const nextPage = () => changePage(1);
   const isGestureCaptureActive = isDocumentHovered || isDocumentFocused;
+
+  useEffect(() => {
+    const linkService = documentRef.current?.linkService?.current;
+    if (!linkService || numPages === null) return;
+
+    linkService.goToDestination = async (dest: unknown) => {
+      const targetPageNumber = await resolvePdfDestinationPageNumber({ dest });
+
+      if (targetPageNumber !== null) {
+        navigateToPage(targetPageNumber);
+        return;
+      }
+
+      console.warn('Unsupported PDF destination:', dest);
+    };
+
+    linkService.goToPage = (targetPageNumber: number) => {
+      navigateToPage(targetPageNumber);
+    };
+
+    linkService.executeNamedAction = (action?: string) => {
+      if (!action) return;
+
+      const targetPageNumber = getPageNumberForPdfNamedAction(action, pageNumber, numPages);
+
+      if (targetPageNumber !== null) {
+        navigateToPage(targetPageNumber);
+        return;
+      }
+
+      console.warn(`Unsupported PDF named action: ${action}`);
+    };
+  }, [navigateToPage, numPages, pageNumber, resolvePdfDestinationPageNumber]);
+
+  const commitPageInput = useCallback(() => {
+    if (numPages === null) {
+      setPageInput(String(pageNumber));
+      return;
+    }
+
+    const parsedPage = Number.parseInt(pageInput, 10);
+    if (!Number.isFinite(parsedPage)) {
+      setPageInput(String(pageNumber));
+      return;
+    }
+
+    navigateToPage(parsedPage);
+  }, [navigateToPage, numPages, pageInput, pageNumber]);
 
   const handleDocumentWheel = useCallback((event: WheelEvent) => {
     if (!isGestureCaptureActive || isPointerActiveRef.current) return;
@@ -718,7 +862,7 @@ export function PdfViewer({ file }: PdfViewerProps) {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [nextPage, numPages, pageNumber, previousPage]);
+  }, [nextPage, numPages, pageNumber, previousPage, navigateToPage]);
 
   if (!fileUrl) return null;
 
@@ -1005,8 +1149,12 @@ export function PdfViewer({ file }: PdfViewerProps) {
       >
         <div className="mx-auto">
           <Document
+            ref={documentRef}
             file={fileUrl}
             onLoadSuccess={onDocumentLoadSuccess}
+            onItemClick={(item) => {
+              void handleDocumentItemClick(item);
+            }}
             loading={
               <div className="flex h-64 items-center justify-center">
                 <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
@@ -1096,10 +1244,31 @@ export function PdfViewer({ file }: PdfViewerProps) {
           >
             <ChevronLeft className="h-5 w-5 text-gray-600" />
           </button>
-          <p className="text-sm text-gray-700">
-            Page <span className="font-medium">{pageNumber}</span> of{' '}
-            <span className="font-medium">{numPages || '--'}</span>
-          </p>
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <span>Page</span>
+            <input
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              value={pageInput}
+              onChange={(event) => setPageInput(event.target.value.replace(/[^0-9]/g, ''))}
+              onBlur={commitPageInput}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  commitPageInput();
+                  (event.currentTarget as HTMLInputElement).blur();
+                } else if (event.key === 'Escape') {
+                  event.preventDefault();
+                  setPageInput(String(pageNumber));
+                  (event.currentTarget as HTMLInputElement).blur();
+                }
+              }}
+              className="w-16 rounded-md border border-gray-300 bg-white px-2 py-1 text-center font-medium text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+              aria-label="페이지 번호 입력"
+            />
+            <span>of <span className="font-medium">{numPages || '--'}</span></span>
+          </label>
           <button
             type="button"
             disabled={numPages === null || pageNumber >= numPages}
