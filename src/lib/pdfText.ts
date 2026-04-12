@@ -1,10 +1,13 @@
 import { pdfjs } from 'react-pdf';
+import { assessPdfTextDensity, DEFAULT_SPARSE_TEXT_THRESHOLD } from './pdfTextHeuristics';
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
 const documentPromiseCache = new WeakMap<File, Promise<any>>();
 const pageTextPromiseCache = new WeakMap<File, Map<number, Promise<string>>>();
 const allPagesPromiseCache = new WeakMap<File, Promise<ExtractedPdfFullText>>();
+const pdfTextIndexMetadataCache = new WeakMap<File, PdfTextIndexMetadata>();
+const pdfTextIndexWarmupPromiseCache = new WeakMap<File, Promise<PdfTextIndexMetadata>>();
 
 function normalizeExtractedText(text: string) {
   return text
@@ -73,6 +76,17 @@ export interface ExtractedPdfFullText {
   }>;
 }
 
+export interface PdfTextIndexMetadata {
+  numPages: number;
+  sampledPages: number;
+  averageCharsPerSampledPage: number;
+  likelyImageOnly: boolean;
+  fullyIndexed: boolean;
+}
+
+const DEFAULT_SAMPLE_PAGE_LIMIT = 8;
+const BACKGROUND_INDEX_BATCH_SIZE = 8;
+
 interface ExtractPdfPageRangeOptions {
   maxCharsPerPage?: number;
 }
@@ -109,6 +123,73 @@ export async function extractPdfPageRangeText(
   };
 }
 
+async function yieldToBrowser() {
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+}
+
+async function warmPdfTextIndex(file: File) {
+  const cachedMetadata = pdfTextIndexMetadataCache.get(file);
+  if (cachedMetadata?.fullyIndexed) {
+    return cachedMetadata;
+  }
+
+  let existingWarmup = pdfTextIndexWarmupPromiseCache.get(file);
+  if (existingWarmup) {
+    return await existingWarmup;
+  }
+
+  existingWarmup = (async () => {
+    const numPages = await getPdfPageCount(file);
+    const samplePageCount = Math.min(numPages, DEFAULT_SAMPLE_PAGE_LIMIT);
+    const sampledTexts: string[] = [];
+
+    for (let pageNumber = 1; pageNumber <= samplePageCount; pageNumber += 1) {
+      sampledTexts.push(await extractPdfPageText(file, pageNumber));
+    }
+
+    const assessment = assessPdfTextDensity(sampledTexts);
+    const initialMetadata: PdfTextIndexMetadata = {
+      numPages,
+      sampledPages: assessment.sampledPages,
+      averageCharsPerSampledPage: assessment.averageCharsPerSampledPage,
+      likelyImageOnly: assessment.likelyImageOnly,
+      fullyIndexed: false,
+    };
+    pdfTextIndexMetadataCache.set(file, initialMetadata);
+
+    if (assessment.likelyImageOnly) {
+      return initialMetadata;
+    }
+
+    for (let pageStart = samplePageCount + 1; pageStart <= numPages; pageStart += BACKGROUND_INDEX_BATCH_SIZE) {
+      const pageEnd = Math.min(numPages, pageStart + BACKGROUND_INDEX_BATCH_SIZE - 1);
+      await Promise.all(
+        Array.from({ length: pageEnd - pageStart + 1 }, (_, index) => extractPdfPageText(file, pageStart + index)),
+      );
+      await yieldToBrowser();
+    }
+
+    const finalMetadata: PdfTextIndexMetadata = {
+      ...initialMetadata,
+      fullyIndexed: true,
+    };
+    pdfTextIndexMetadataCache.set(file, finalMetadata);
+    return finalMetadata;
+  })();
+
+  pdfTextIndexWarmupPromiseCache.set(file, existingWarmup);
+  return await existingWarmup;
+}
+
+export async function getPdfTextIndexMetadata(file: File) {
+  const cachedMetadata = pdfTextIndexMetadataCache.get(file);
+  if (cachedMetadata) {
+    return cachedMetadata;
+  }
+
+  return await warmPdfTextIndex(file);
+}
+
 export async function extractAllPdfPageText(file: File) {
   let allPagesPromise = allPagesPromiseCache.get(file);
   if (!allPagesPromise) {
@@ -123,6 +204,15 @@ export async function extractAllPdfPageText(file: File) {
         });
       }
 
+      const assessment = assessPdfTextDensity(pages.map((page) => page.text));
+      pdfTextIndexMetadataCache.set(file, {
+        numPages,
+        sampledPages: assessment.sampledPages,
+        averageCharsPerSampledPage: assessment.averageCharsPerSampledPage,
+        likelyImageOnly: assessment.likelyImageOnly,
+        fullyIndexed: true,
+      });
+
       return { numPages, pages };
     })();
 
@@ -133,7 +223,7 @@ export async function extractAllPdfPageText(file: File) {
 }
 
 export function primePdfTextIndex(file: File) {
-  void extractAllPdfPageText(file).catch(() => {
+  void warmPdfTextIndex(file).catch(() => {
     // Ignore background indexing failures. Individual queries will surface actionable errors.
   });
 }

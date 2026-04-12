@@ -1,7 +1,7 @@
 import type { ChatDocumentContext, ChatImageAttachment } from './chatApi';
 import { renderPdfPageImages } from './pdfImages';
 import { parsePdfPageReference } from './pdfPageRequests';
-import { extractAllPdfPageText, extractPdfPageRangeText, getPdfPageCount } from './pdfText';
+import { extractAllPdfPageText, extractPdfPageRangeText, getPdfPageCount, getPdfTextIndexMetadata } from './pdfText';
 
 const DEFAULT_TOTAL_CONTEXT_CHARS = 14000;
 const EXPLICIT_CONTEXT_MAX_PAGES = 12;
@@ -274,6 +274,34 @@ export async function resolvePdfDocumentContext({
         images: preferredCurrentPageImages,
       };
     }
+  }
+
+  const textIndexMetadata = await getPdfTextIndexMetadata(file);
+  if (textIndexMetadata.likelyImageOnly) {
+    if (!normalizedCurrentPage) {
+      return undefined;
+    }
+
+    const { numPages, pages } = await extractPdfPageRangeText(file, normalizedCurrentPage, normalizedCurrentPage, {
+      maxCharsPerPage: Math.floor(DEFAULT_TOTAL_CONTEXT_CHARS / 2),
+    });
+
+    return {
+      documentContext: buildDocumentContext({
+        currentPage: normalizedCurrentPage,
+        totalPages: totalPages ?? numPages,
+        focus: '현재 페이지',
+        pages: [{
+          pageNumber: normalizedCurrentPage,
+          text: pages[0]?.text || '',
+        }],
+      }),
+      images: await renderPdfPageImages(file, [normalizedCurrentPage], {
+        maxWidth: 1280,
+        mimeType: 'image/jpeg',
+        quality: 0.82,
+      }),
+    };
   }
 
   const { numPages, pages } = await extractAllPdfPageText(file);
