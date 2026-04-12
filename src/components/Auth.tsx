@@ -13,10 +13,10 @@ export function Auth() {
             <BookOpen className="h-8 w-8 text-blue-600" />
           </div>
           <h2 className="mt-6 text-3xl font-extrabold text-gray-900">
-            Codex Study Platform
+            StudAI
           </h2>
           <p className="mt-2 text-sm text-gray-600">
-            로컬 Codex 계정으로 로그인하여 학습을 시작하세요.
+            AI와 함께 문서를 학습하는 로컬 워크스페이스입니다.
           </p>
         </div>
         <div className="mt-8 space-y-6">
@@ -27,7 +27,7 @@ export function Auth() {
             <span className="absolute inset-y-0 left-0 flex items-center pl-3">
               <KeyRound className="h-5 w-5 text-blue-500 group-hover:text-blue-400" aria-hidden="true" />
             </span>
-            Codex Local Login
+StudAI 시작하기
           </button>
         </div>
       </div>

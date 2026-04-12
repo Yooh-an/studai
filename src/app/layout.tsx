@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Studai',
+  title: 'StudAI',
   description: 'Local-first study workspace with PDF/EPUB reading and Codex chat.',
 };
 

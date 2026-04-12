@@ -6,11 +6,11 @@ import { EpubViewer } from './EpubViewer';
 import { ChatPanel } from './ChatPanel';
 import { AskAIPopup } from './AskAIPopup';
 import { SettingsPage } from './SettingsPage';
-import { LogOut, BookOpen, FolderOpen, MessageSquare, Settings } from 'lucide-react';
+import { BookOpen, FolderOpen, MessageSquare, Settings } from 'lucide-react';
 import { getFileTypeFromFile, SUPPORTED_FILE_ACCEPT } from '../lib/fileUtils';
 
 export function MainLayout() {
-  const { currentFile, currentView, fileType, logout, isChatOpen, setChatOpen, setCurrentView, setFile } = useAppContext();
+  const { currentFile, currentView, fileType, isChatOpen, setChatOpen, setCurrentView, setFile } = useAppContext();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleOpenFilePicker = useCallback(() => {
@@ -46,7 +46,7 @@ export function MainLayout() {
         />
         <div className="flex items-center gap-2">
           <BookOpen className="h-6 w-6 text-blue-600" />
-          <h1 className="text-lg font-bold text-gray-900">Codex Study Platform</h1>
+          <h1 className="text-lg font-bold text-gray-900">StudAI</h1>
         </div>
         <div className="flex items-center gap-3">
           <button
@@ -71,13 +71,6 @@ export function MainLayout() {
           >
             <Settings className="h-4 w-4" />
             {currentView === 'settings' ? 'Workspace' : 'Settings'}
-          </button>
-          <button
-            onClick={logout}
-            className="flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-100"
-          >
-            <LogOut className="h-4 w-4" />
-            Logout
           </button>
         </div>
       </header>

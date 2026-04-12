@@ -32,10 +32,7 @@ export function Uploader() {
       <div className="w-full max-w-2xl rounded-2xl border-2 border-dashed border-gray-300 bg-white p-12 text-center shadow-sm transition-all hover:border-blue-500 hover:bg-blue-50">
         <UploadCloud className="mx-auto h-16 w-16 text-gray-400" />
         <h3 className="mt-4 text-xl font-semibold text-gray-900">문서 업로드</h3>
-        <p className="mt-2 text-gray-500">
-          500MB 이상의 대용량 PDF 또는 EPUB 파일을 지원합니다.
-        </p>
-        
+
         <div className="mt-8 flex justify-center gap-4">
           <div className="flex items-center gap-2 text-sm text-gray-600">
             <FileText className="h-5 w-5 text-red-500" />
