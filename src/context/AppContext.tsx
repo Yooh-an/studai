@@ -24,6 +24,10 @@ interface AppContextType {
   currentFile: File | null;
   fileType: FileType;
   setFile: (file: File | null, type: FileType) => void;
+  currentPdfPage: number | null;
+  setCurrentPdfPage: (page: number | null) => void;
+  currentPdfNumPages: number | null;
+  setCurrentPdfNumPages: (pageCount: number | null) => void;
   
   selectedText: string;
   setSelectedText: (text: string) => void;
@@ -51,6 +55,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [fileType, setFileType] = useState<FileType>(null);
   const [selectedText, setSelectedText] = useState('');
   const [popupPosition, setPopupPosition] = useState<{ x: number; y: number } | null>(null);
+  const [currentPdfPage, setCurrentPdfPage] = useState<number | null>(null);
+  const [currentPdfNumPages, setCurrentPdfNumPages] = useState<number | null>(null);
   const [chatMessages, setChatMessages] = useState<Message[]>(DEFAULT_CHAT_MESSAGES);
   const [hasLoadedCachedChat, setHasLoadedCachedChat] = useState(false);
   const [isChatOpen, setChatOpen] = useState(true);
@@ -92,6 +98,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const setFile = (file: File | null, type: FileType) => {
     setCurrentFile(file);
     setFileType(type);
+    setCurrentPdfPage(type === 'pdf' && file ? 1 : null);
+    setCurrentPdfNumPages(null);
   };
 
   const addMessage = (msg: Message) => {
@@ -103,6 +111,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       isAuthenticated, login, logout,
       currentView, setCurrentView,
       currentFile, fileType, setFile,
+      currentPdfPage, setCurrentPdfPage,
+      currentPdfNumPages, setCurrentPdfNumPages,
       selectedText, setSelectedText,
       popupPosition, setPopupPosition,
       chatMessages, addMessage,

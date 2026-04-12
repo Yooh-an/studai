@@ -5,6 +5,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import TextareaAutosize from 'react-textarea-autosize';
 import { fetchChatModels, requestChatReply } from '../lib/aiClient';
+import { PdfContextResolutionError, resolvePdfDocumentContext } from '../lib/pdfQueryPlanner';
 import {
   AI_PROVIDER_EVENT,
   DEFAULT_AI_PROVIDER,
@@ -22,7 +23,17 @@ function formatProviderLabel(provider: AIProvider) {
 }
 
 export function ChatPanel() {
-  const { isChatOpen, setChatOpen, setCurrentView, chatMessages, addMessage } = useAppContext();
+  const {
+    isChatOpen,
+    setChatOpen,
+    setCurrentView,
+    chatMessages,
+    addMessage,
+    currentFile,
+    fileType,
+    currentPdfPage,
+    currentPdfNumPages,
+  } = useAppContext();
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<AIProvider>(readStoredAIProvider());
@@ -112,14 +123,25 @@ export function ChatPanel() {
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
 
-  const handleGenerateResponse = async (userText: string, imageBase64?: string) => {
+  const handleGenerateResponse = async (userText: string) => {
     setIsLoading(true);
     try {
+      const resolvedPdfContext =
+        fileType === 'pdf' && currentFile
+          ? await resolvePdfDocumentContext({
+              file: currentFile,
+              userText,
+              currentPage: currentPdfPage,
+              totalPages: currentPdfNumPages,
+            })
+          : undefined;
+
       const response = await requestChatReply({
         input: userText,
-        imageBase64,
         provider: selectedProvider || DEFAULT_AI_PROVIDER,
         model: selectedModel || undefined,
+        documentContext: resolvedPdfContext?.documentContext,
+        images: resolvedPdfContext?.images,
         messages: chatMessages
           .filter((message) => message.role === 'user' || message.role === 'model')
           .map((message) => ({
@@ -138,7 +160,10 @@ export function ChatPanel() {
       addMessage({
         id: Date.now().toString(),
         role: 'model',
-        content: '채팅 응답 생성 중 오류가 발생했습니다. Settings에서 provider 상태를 확인해주세요.',
+        content:
+          error instanceof PdfContextResolutionError
+            ? error.message
+            : '응답을 생성하지 못했습니다. 다시 시도해주세요.',
       });
     } finally {
       setIsLoading(false);

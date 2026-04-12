@@ -7,12 +7,33 @@ export interface ChatApiMessage {
   content: string;
 }
 
+export interface ChatDocumentPageContext {
+  pageNumber: number;
+  text: string;
+}
+
+export interface ChatImageAttachment {
+  data: string;
+  mimeType: 'image/jpeg' | 'image/png';
+  label?: string;
+  pageNumber?: number;
+}
+
+export interface ChatDocumentContext {
+  kind: 'pdf';
+  currentPage?: number;
+  totalPages?: number;
+  focus?: string;
+  pages: ChatDocumentPageContext[];
+}
+
 export interface ChatCompletionRequest {
   input: string;
   messages: ChatApiMessage[];
-  imageBase64?: string;
+  images?: ChatImageAttachment[];
   provider?: AIProvider;
   model?: string;
+  documentContext?: ChatDocumentContext;
 }
 
 export interface ChatCompletionResponse {

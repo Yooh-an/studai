@@ -31,7 +31,7 @@ const codexRuntime: ProviderRuntime = {
     return await validateCodexConnection(model);
   },
   async runTurn(request: ChatCompletionRequest) {
-    return await runCodexTurn(request.input, request.messages, request.model);
+    return await runCodexTurn(request.input, request.messages, request.model, request.documentContext, request.images);
   },
 };
 

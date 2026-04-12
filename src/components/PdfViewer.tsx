@@ -40,6 +40,7 @@ import {
   isScrollAtGestureBoundary,
   normalizeWheelDelta,
 } from '../lib/documentGestures';
+import { primePdfTextIndex } from '../lib/pdfText';
 
 // Initialize PDF.js worker
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
@@ -161,7 +162,12 @@ export function PdfViewer({ file }: PdfViewerProps) {
     originX: number;
     originY: number;
   } | null>(null);
-  const { setPopupPosition, setSelectedText } = useAppContext();
+  const {
+    setPopupPosition,
+    setSelectedText,
+    setCurrentPdfPage,
+    setCurrentPdfNumPages,
+  } = useAppContext();
 
   useEffect(() => {
     const url = URL.createObjectURL(file);
@@ -187,10 +193,12 @@ export function PdfViewer({ file }: PdfViewerProps) {
     setIsDocumentFocused(false);
     setPopupPosition(null);
     setSelectedText('');
+    setCurrentPdfPage(1);
+    setCurrentPdfNumPages(null);
     setHasLoadedCachedStrokes(true);
 
     return () => URL.revokeObjectURL(url);
-  }, [documentCacheId, file, setPopupPosition, setSelectedText]);
+  }, [documentCacheId, file, setCurrentPdfNumPages, setCurrentPdfPage, setPopupPosition, setSelectedText]);
 
   useEffect(() => {
     if (!hasLoadedCachedStrokes) return;
@@ -227,8 +235,21 @@ export function PdfViewer({ file }: PdfViewerProps) {
 
   function onDocumentLoadSuccess({ numPages }: { numPages: number }) {
     setNumPages(numPages);
+    setCurrentPdfNumPages(numPages);
     setPageNumber(Math.min(Math.max(cachedPageNumber ?? 1, 1), numPages));
+
+    const scheduleIndexing = () => primePdfTextIndex(file);
+    if (typeof window.requestIdleCallback === 'function') {
+      window.requestIdleCallback(scheduleIndexing, { timeout: 1500 });
+      return;
+    }
+
+    setTimeout(scheduleIndexing, 250);
   }
+
+  useEffect(() => {
+    setCurrentPdfPage(pageNumber);
+  }, [pageNumber, setCurrentPdfPage]);
 
   const clampFloatingToolbarPosition = useCallback((position: { x: number; y: number }) => {
     const containerRect = viewerRef.current?.getBoundingClientRect();
