@@ -179,7 +179,77 @@ function toPageRelativeRect(rect: ViewportRect, pageRect: ViewportRect): Viewpor
   };
 }
 
+function normalizeRect(rect: ViewportRect) {
+  return {
+    left: rect.left,
+    top: rect.top,
+    right: rect.left + rect.width,
+    bottom: rect.top + rect.height,
+    width: rect.width,
+    height: rect.height,
+  };
+}
+
+function mergeSelectionRects(rects: ViewportRect[]): ViewportRect[] {
+  const sortedRects = [...rects]
+    .map((rect) => normalizeRect(rect))
+    .sort((a, b) => (a.top === b.top ? a.left - b.left : a.top - b.top));
+
+  const mergedRects: Array<ReturnType<typeof normalizeRect>> = [];
+
+  for (const rect of sortedRects) {
+    const previousRect = mergedRects[mergedRects.length - 1];
+    if (!previousRect) {
+      mergedRects.push(rect);
+      continue;
+    }
+
+    const verticalDelta = Math.abs(rect.top - previousRect.top);
+    const heightDelta = Math.abs(rect.height - previousRect.height);
+    const sameLine = verticalDelta <= Math.max(4, Math.min(previousRect.height, rect.height) * 0.35) && heightDelta <= 6;
+    const horizontallyConnected = rect.left <= previousRect.right + 6;
+
+    if (sameLine && horizontallyConnected) {
+      previousRect.left = Math.min(previousRect.left, rect.left);
+      previousRect.top = Math.min(previousRect.top, rect.top);
+      previousRect.right = Math.max(previousRect.right, rect.right);
+      previousRect.bottom = Math.max(previousRect.bottom, rect.bottom);
+      previousRect.width = previousRect.right - previousRect.left;
+      previousRect.height = previousRect.bottom - previousRect.top;
+      continue;
+    }
+
+    mergedRects.push(rect);
+  }
+
+  return mergedRects.map((rect) => ({
+    left: rect.left,
+    top: rect.top,
+    width: rect.right - rect.left,
+    height: rect.bottom - rect.top,
+  }));
+}
+
+function getSelectionStrokeRect(stroke: AnnotationStroke, pageSize: { width: number; height: number }) {
+  if (stroke.source !== 'selection' || stroke.points.length < 2) return null;
+
+  const firstPoint = toPixels(stroke.points[0], pageSize);
+  const secondPoint = toPixels(stroke.points[1], pageSize);
+
+  return {
+    left: Math.min(firstPoint.x, secondPoint.x),
+    top: Math.min(firstPoint.y, secondPoint.y),
+    right: Math.max(firstPoint.x, secondPoint.x),
+    bottom: Math.max(firstPoint.y, secondPoint.y),
+  };
+}
+
 function getStrokeBounds(stroke: AnnotationStroke, pageSize: { width: number; height: number }) {
+  const selectionRect = getSelectionStrokeRect(stroke, pageSize);
+  if (selectionRect) {
+    return selectionRect;
+  }
+
   if (stroke.points.length === 0) return null;
 
   const pixelPoints = stroke.points.map((point) => toPixels(point, pageSize));
@@ -218,32 +288,30 @@ export function buildSelectionHighlightStrokes({
   selectionRects: ViewportRect[];
   pageRect: ViewportRect;
 }): AnnotationStroke[] {
-  return selectionRects
-    .map((rect) => clipViewportRectToPage(rect, pageRect))
-    .filter((rect): rect is ViewportRect => rect !== null)
-    .map((rect) => {
-      const centerY = rect.top + rect.height / 2;
-      const startPoint = {
+  return mergeSelectionRects(
+    selectionRects
+      .map((rect) => clipViewportRectToPage(rect, pageRect))
+      .filter((rect): rect is ViewportRect => rect !== null),
+  ).map((rect) => ({
+    id: `${pageNumber}-highlighter-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    pageNumber,
+    tool: 'highlighter',
+    source: 'selection',
+    color,
+    size: Math.max(2, rect.height),
+    opacity: 0.22,
+    blendMode: 'multiply',
+    points: [
+      normalizePoint({
         x: (rect.left - pageRect.left) / pageRect.width,
-        y: (centerY - pageRect.top) / pageRect.height,
-      };
-      const endPoint = {
+        y: (rect.top - pageRect.top) / pageRect.height,
+      }),
+      normalizePoint({
         x: (rect.left + rect.width - pageRect.left) / pageRect.width,
-        y: startPoint.y,
-      };
-
-      return updateStrokeWithPoint(
-        buildStroke({
-          pageNumber,
-          tool: 'highlighter',
-          color,
-          size: Math.max(2, rect.height / 2.4),
-          point: startPoint,
-          source: 'selection',
-        }),
-        endPoint,
-      );
-    });
+        y: (rect.top + rect.height - pageRect.top) / pageRect.height,
+      }),
+    ],
+  }));
 }
 
 export function isPointNearStroke({
@@ -258,6 +326,16 @@ export function isPointNearStroke({
   if (stroke.points.length === 0) return false;
 
   const pixelPoint = toPixels(point, pageSize);
+  const selectionRect = getSelectionStrokeRect(stroke, pageSize);
+  if (selectionRect) {
+    return (
+      pixelPoint.x >= selectionRect.left &&
+      pixelPoint.x <= selectionRect.right &&
+      pixelPoint.y >= selectionRect.top &&
+      pixelPoint.y <= selectionRect.bottom
+    );
+  }
+
   const threshold = Math.max(10, stroke.size * 1.2);
 
   if (stroke.points.length === 1) {

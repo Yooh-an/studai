@@ -105,13 +105,15 @@ test('eraseStrokeAtPoint removes only the touched stroke from the current page',
   );
 });
 
-test('buildSelectionHighlightStrokes converts text selection rects into page-relative highlighter strokes', () => {
+test('buildSelectionHighlightStrokes merges overlapping line fragments and stores rectangle bounds', () => {
   const strokes = buildSelectionHighlightStrokes({
     pageNumber: 3,
     color: '#facc15',
     selectionRects: [
-      { left: 120, top: 220, width: 180, height: 24 },
+      { left: 120, top: 220, width: 84, height: 24 },
+      { left: 198, top: 220, width: 102, height: 24 },
       { left: 120, top: 252, width: 96, height: 24 },
+      { left: 121, top: 252, width: 95, height: 24 },
     ],
     pageRect: { left: 100, top: 200, width: 400, height: 600 },
   });
@@ -121,12 +123,12 @@ test('buildSelectionHighlightStrokes converts text selection rects into page-rel
   assert.equal(strokes[0].source, 'selection');
   assert.equal(strokes[0].size, 24);
   assert.deepEqual(strokes[0].points, [
-    { x: 0.05, y: 0.05333333333333334 },
-    { x: 0.5, y: 0.05333333333333334 },
+    { x: 0.05, y: 0.03333333333333333 },
+    { x: 0.5, y: 0.07333333333333333 },
   ]);
   assert.deepEqual(strokes[1].points, [
-    { x: 0.05, y: 0.10666666666666667 },
-    { x: 0.29, y: 0.10666666666666667 },
+    { x: 0.05, y: 0.08666666666666667 },
+    { x: 0.29, y: 0.12666666666666668 },
   ]);
 });
 

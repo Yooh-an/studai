@@ -1267,8 +1267,32 @@ export function PdfViewer({ file }: PdfViewerProps) {
                   className="pointer-events-none absolute inset-0"
                 >
                   {visibleStrokes.map((stroke) => {
-                    const path = strokeToSvgPath(stroke, pageSize);
                     const key = `${stroke.id}-${stroke.points.length}`;
+
+                    if (stroke.source === 'selection' && stroke.points.length >= 2) {
+                      const startPoint = stroke.points[0];
+                      const endPoint = stroke.points[1];
+                      const left = Math.min(startPoint.x, endPoint.x) * pageSize.width;
+                      const top = Math.min(startPoint.y, endPoint.y) * pageSize.height;
+                      const width = Math.abs(endPoint.x - startPoint.x) * pageSize.width;
+                      const height = Math.abs(endPoint.y - startPoint.y) * pageSize.height;
+
+                      return (
+                        <rect
+                          key={key}
+                          x={left}
+                          y={top}
+                          width={width}
+                          height={height}
+                          rx={Math.min(10, height / 2)}
+                          fill={stroke.color}
+                          opacity={stroke.opacity}
+                          style={{ mixBlendMode: stroke.blendMode }}
+                        />
+                      );
+                    }
+
+                    const path = strokeToSvgPath(stroke, pageSize);
 
                     if (stroke.points.length === 1) {
                       const point = stroke.points[0];
