@@ -34,6 +34,12 @@ import {
   saveCachedPdfLastPage,
   saveCachedPdfScale,
 } from '../lib/documentCache';
+import {
+  clampPdfScale,
+  getPdfScaleFromPinchGesture,
+  isScrollAtGestureBoundary,
+  normalizeWheelDelta,
+} from '../lib/documentGestures';
 
 // Initialize PDF.js worker
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
@@ -43,6 +49,8 @@ interface PdfViewerProps {
 }
 
 const TOOLBAR_COLORS = ['#2563eb', '#111827', '#ef4444', '#16a34a', '#f59e0b', '#a855f7'];
+const PAGE_GESTURE_THRESHOLD = 96;
+const PAGE_GESTURE_COOLDOWN_MS = 320;
 
 interface ToolButtonProps {
   active: boolean;
@@ -131,13 +139,21 @@ export function PdfViewer({ file }: PdfViewerProps) {
   const [floatingToolbarPosition, setFloatingToolbarPosition] = useState({ x: 24, y: 88 });
   const [isFloatingToolbarDragging, setIsFloatingToolbarDragging] = useState(false);
   const [floatingToolbarPanel, setFloatingToolbarPanel] = useState<'tool' | 'color' | 'size' | null>(null);
+  const [isDocumentHovered, setIsDocumentHovered] = useState(false);
+  const [isDocumentFocused, setIsDocumentFocused] = useState(false);
   const viewerRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const pageRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const floatingToolbarRef = useRef<HTMLDivElement>(null);
   const documentCacheId = useMemo(() => getDocumentCacheId(file), [file]);
   const draftStrokeRef = useRef<AnnotationStroke | null>(null);
   const isPointerActiveRef = useRef(false);
+  const wheelGestureDeltaRef = useRef(0);
+  const lastWheelGestureAtRef = useRef(0);
+  const pendingPageAnchorRef = useRef<'top' | 'bottom' | null>(null);
+  const gestureStartScaleRef = useRef<number | null>(null);
+  const lastSafariGestureScaleRef = useRef(1);
   const floatingToolbarDragRef = useRef<{
     pointerId: number;
     startX: number;
@@ -159,9 +175,16 @@ export function PdfViewer({ file }: PdfViewerProps) {
     setDraftStroke(null);
     draftStrokeRef.current = null;
     floatingToolbarDragRef.current = null;
+    wheelGestureDeltaRef.current = 0;
+    lastWheelGestureAtRef.current = 0;
+    pendingPageAnchorRef.current = null;
+    gestureStartScaleRef.current = null;
+    lastSafariGestureScaleRef.current = 1;
     setFloatingToolbarPosition({ x: 24, y: 88 });
     setIsFloatingToolbarDragging(false);
     setFloatingToolbarPanel(null);
+    setIsDocumentHovered(false);
+    setIsDocumentFocused(false);
     setPopupPosition(null);
     setSelectedText('');
     setHasLoadedCachedStrokes(true);
@@ -232,6 +255,77 @@ export function PdfViewer({ file }: PdfViewerProps) {
 
   const previousPage = () => changePage(-1);
   const nextPage = () => changePage(1);
+  const isGestureCaptureActive = isDocumentHovered || isDocumentFocused;
+
+  const handleDocumentWheel = useCallback((event: WheelEvent) => {
+    if (!isGestureCaptureActive || isPointerActiveRef.current) return;
+
+    if (event.ctrlKey) {
+      event.preventDefault();
+      wheelGestureDeltaRef.current = 0;
+      setScale((currentScale) =>
+        getPdfScaleFromPinchGesture(
+          currentScale,
+          normalizeWheelDelta(event.deltaY, event.deltaMode, window.innerHeight),
+        ),
+      );
+      return;
+    }
+
+    if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) {
+      wheelGestureDeltaRef.current = 0;
+      return;
+    }
+
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const normalizedDeltaY = normalizeWheelDelta(event.deltaY, event.deltaMode, container.clientHeight || window.innerHeight);
+    const direction = Math.sign(normalizedDeltaY) as -1 | 0 | 1;
+    if (!direction) return;
+
+    const canMoveToPreviousPage = direction < 0 && pageNumber > 1;
+    const canMoveToNextPage = direction > 0 && numPages !== null && pageNumber < numPages;
+    const isAtBoundary = isScrollAtGestureBoundary({
+      scrollTop: container.scrollTop,
+      clientHeight: container.clientHeight,
+      scrollHeight: container.scrollHeight,
+      direction: direction < 0 ? -1 : 1,
+    });
+
+    if ((!canMoveToPreviousPage && !canMoveToNextPage) || !isAtBoundary) {
+      wheelGestureDeltaRef.current = 0;
+      return;
+    }
+
+    event.preventDefault();
+
+    if (Math.sign(wheelGestureDeltaRef.current) !== direction) {
+      wheelGestureDeltaRef.current = 0;
+    }
+
+    wheelGestureDeltaRef.current += normalizedDeltaY;
+
+    const now = window.performance.now();
+    if (now - lastWheelGestureAtRef.current < PAGE_GESTURE_COOLDOWN_MS) {
+      return;
+    }
+
+    if (Math.abs(wheelGestureDeltaRef.current) < PAGE_GESTURE_THRESHOLD) {
+      return;
+    }
+
+    lastWheelGestureAtRef.current = now;
+    wheelGestureDeltaRef.current = 0;
+    pendingPageAnchorRef.current = direction > 0 ? 'top' : 'bottom';
+
+    if (direction > 0) {
+      nextPage();
+      return;
+    }
+
+    previousPage();
+  }, [isGestureCaptureActive, nextPage, numPages, pageNumber, previousPage]);
 
   const currentPageStrokes = useMemo(
     () => strokes.filter((stroke) => stroke.pageNumber === pageNumber),
@@ -472,6 +566,88 @@ export function PdfViewer({ file }: PdfViewerProps) {
       window.removeEventListener('pointerdown', handlePointerDownOutside);
     };
   }, [clampFloatingToolbarPosition, isToolbarOpen]);
+
+  const handleSafariGestureStart = useCallback((event: Event) => {
+    if (!isGestureCaptureActive) return;
+
+    const gestureEvent = event as Event & { scale?: number; cancelable?: boolean };
+    if (gestureEvent.cancelable) {
+      gestureEvent.preventDefault();
+    }
+
+    gestureStartScaleRef.current = scale;
+    lastSafariGestureScaleRef.current =
+      typeof gestureEvent.scale === 'number' && Number.isFinite(gestureEvent.scale) ? gestureEvent.scale : 1;
+  }, [isGestureCaptureActive, scale]);
+
+  const handleSafariGestureChange = useCallback((event: Event) => {
+    if (!isGestureCaptureActive) return;
+
+    const gestureEvent = event as Event & { scale?: number; cancelable?: boolean };
+    if (gestureEvent.cancelable) {
+      gestureEvent.preventDefault();
+    }
+
+    const baseScale = gestureStartScaleRef.current ?? scale;
+    const gestureScale =
+      typeof gestureEvent.scale === 'number' && Number.isFinite(gestureEvent.scale)
+        ? gestureEvent.scale
+        : lastSafariGestureScaleRef.current;
+
+    lastSafariGestureScaleRef.current = gestureScale;
+    setScale(clampPdfScale(baseScale * gestureScale));
+  }, [isGestureCaptureActive, scale]);
+
+  const handleSafariGestureEnd = useCallback((event: Event) => {
+    if (isGestureCaptureActive) {
+      const gestureEvent = event as Event & { cancelable?: boolean };
+      if (gestureEvent.cancelable) {
+        gestureEvent.preventDefault();
+      }
+    }
+
+    gestureStartScaleRef.current = null;
+    lastSafariGestureScaleRef.current = 1;
+  }, [isGestureCaptureActive]);
+
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    container.addEventListener('wheel', handleDocumentWheel, { passive: false });
+    container.addEventListener('gesturestart', handleSafariGestureStart as EventListener, { passive: false });
+    container.addEventListener('gesturechange', handleSafariGestureChange as EventListener, { passive: false });
+    container.addEventListener('gestureend', handleSafariGestureEnd as EventListener, { passive: false });
+
+    return () => {
+      container.removeEventListener('wheel', handleDocumentWheel);
+      container.removeEventListener('gesturestart', handleSafariGestureStart as EventListener);
+      container.removeEventListener('gesturechange', handleSafariGestureChange as EventListener);
+      container.removeEventListener('gestureend', handleSafariGestureEnd as EventListener);
+    };
+  }, [handleDocumentWheel, handleSafariGestureChange, handleSafariGestureEnd, handleSafariGestureStart]);
+
+  useEffect(() => {
+    if (!isGestureCaptureActive) {
+      wheelGestureDeltaRef.current = 0;
+      pendingPageAnchorRef.current = null;
+      gestureStartScaleRef.current = null;
+      lastSafariGestureScaleRef.current = 1;
+    }
+  }, [isGestureCaptureActive]);
+
+  useEffect(() => {
+    const anchor = pendingPageAnchorRef.current;
+    const container = scrollContainerRef.current;
+    if (!anchor || !container) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      container.scrollTop = anchor === 'bottom' ? container.scrollHeight : 0;
+      pendingPageAnchorRef.current = null;
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [pageNumber, pageSize.height]);
 
   useEffect(() => {
     const isEditableTarget = (target: EventTarget | null) => {
@@ -790,7 +966,22 @@ export function PdfViewer({ file }: PdfViewerProps) {
         </div>
       )}
 
-      <div className="flex flex-1 overflow-auto p-4">
+      <div
+        ref={scrollContainerRef}
+        tabIndex={0}
+        aria-label="PDF 문서 뷰어"
+        className={`flex flex-1 overflow-auto overscroll-contain p-4 outline-none transition-shadow ${
+          isGestureCaptureActive ? 'ring-2 ring-blue-200 ring-inset' : ''
+        }`}
+        onPointerEnter={() => setIsDocumentHovered(true)}
+        onPointerLeave={() => setIsDocumentHovered(false)}
+        onFocus={() => setIsDocumentFocused(true)}
+        onBlur={() => setIsDocumentFocused(false)}
+        onPointerDownCapture={() => {
+          scrollContainerRef.current?.focus({ preventScroll: true });
+          setIsDocumentFocused(true);
+        }}
+      >
         <div className="mx-auto">
           <Document
             file={fileUrl}
@@ -901,7 +1092,7 @@ export function PdfViewer({ file }: PdfViewerProps) {
         <div className="flex items-center gap-2 rounded-full border border-gray-200 bg-gray-50 px-2 py-1">
           <button
             type="button"
-            onClick={() => setScale((currentScale) => Math.max(0.5, currentScale - 0.1))}
+            onClick={() => setScale((currentScale) => clampPdfScale(currentScale - 0.1))}
             className="rounded p-1 hover:bg-gray-100"
             title="축소"
           >
@@ -910,7 +1101,7 @@ export function PdfViewer({ file }: PdfViewerProps) {
           <span className="min-w-14 text-center text-sm text-gray-600">{Math.round(scale * 100)}%</span>
           <button
             type="button"
-            onClick={() => setScale((currentScale) => Math.min(3, currentScale + 0.1))}
+            onClick={() => setScale((currentScale) => clampPdfScale(currentScale + 0.1))}
             className="rounded p-1 hover:bg-gray-100"
             title="확대"
           >
