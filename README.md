@@ -1,22 +1,25 @@
 # Studai
 
-Studai is a local-first study workspace for reading PDF and EPUB documents, annotating them, and asking AI questions directly from selected text.
+Studai is a local-first study workspace for reading PDF and EPUB documents, annotating them, and asking AI questions about selected text or the document itself.
 
 ## Highlights
 
-- **PDF reader** with page navigation, zoom controls, and restored reading state
+- **PDF reader** with page navigation, zoom controls, annotations, and restored reading state
 - **EPUB reader** powered by `react-reader` with saved reading position
+- **Document-aware AI chat** that can answer natural-language PDF questions like current page, specific pages, and short page ranges
+- **Page-image fallback for scan PDFs** so figure/table questions can still use the currently viewed page image when extractable text is sparse
 - **Ask AI from selection** via an inline popup when text is highlighted
 - **Annotation tools** including pen, highlighter, underline, eraser, and color presets
 - **AI chat panel** with provider/model selection and Markdown responses
+- **Background PDF indexing** optimized to sample scan-heavy documents instead of eagerly indexing every page
 - **Settings page** for provider validation and chat font-size preferences
-- **Local document cache** that preserves annotations and chat history by file identity
+- **Local document cache** that preserves annotations, chat history, and reading state by file identity
 
 ## Architecture
 
 Studai is built with **Next.js App Router**.
 
-The UI uses built-in application API routes for chat, model discovery, and provider checks, while server-side route handlers invoke the local AI runtime.
+The UI uses built-in application API routes for chat, model discovery, and provider checks, while server-side route handlers invoke the local AI runtime. For PDF chat, the client builds document context from page text and, when needed, rendered page images before sending the user’s original request to the server runtime.
 
 ### API surface
 
@@ -74,6 +77,21 @@ npm run build
 npm run start
 ```
 
+## PDF Chat Behavior
+
+Studai's PDF chat flow is document-aware:
+
+- natural-language requests such as `현재 페이지 설명해줘`, `15페이지 요약해줘`, or `10~12페이지 핵심 정리해줘` are resolved against the open PDF
+- figure/table references without explicit page wording prefer the **currently viewed page** first
+- text PDFs use extracted page text as primary evidence
+- scan-heavy PDFs can attach rendered page images to the model when text extraction is weak
+- background indexing samples the first pages to detect image-heavy PDFs and avoids unnecessary full-text indexing for large scan documents
+
+Current limitations:
+
+- chapter/section-level understanding is not indexed yet
+- broad whole-document requests on scan PDFs still depend on page-local context more than full-document retrieval
+
 ## AI Provider Setup
 
 Studai currently integrates with **Codex** through server-side runtime handlers.
@@ -121,6 +139,11 @@ studai/
 │   │   ├── documentCache.ts
 │   │   ├── fileUtils.ts
 │   │   ├── pdfAnnotations.ts
+│   │   ├── pdfImages.ts
+│   │   ├── pdfPageRequests.ts
+│   │   ├── pdfQueryPlanner.ts
+│   │   ├── pdfText.ts
+│   │   ├── pdfTextHeuristics.ts
 │   │   ├── providerPreferences.ts
 │   │   └── server/
 │   │       ├── codex.ts
