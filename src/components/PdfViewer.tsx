@@ -55,6 +55,10 @@ interface PdfViewerProps {
 const TOOLBAR_COLORS = ['#2563eb', '#111827', '#ef4444', '#16a34a', '#f59e0b', '#a855f7'];
 const PAGE_GESTURE_THRESHOLD = 96;
 const PAGE_GESTURE_COOLDOWN_MS = 320;
+const FLOATING_TOOLBAR_PADDING = 16;
+const FLOATING_TOOLBAR_DEFAULT_POSITION = { x: 24, y: FLOATING_TOOLBAR_PADDING };
+const FLOATING_TOOLBAR_FALLBACK_WIDTH = 320;
+const FLOATING_TOOLBAR_FALLBACK_HEIGHT = 168;
 
 
 interface ToolButtonProps {
@@ -137,12 +141,12 @@ export function PdfViewer({ file }: PdfViewerProps) {
   const [strokeSize, setStrokeSize] = useState(4);
   const [strokes, setStrokes] = useState<AnnotationStroke[]>([]);
   const [cachedPageNumber, setCachedPageNumber] = useState<number | null>(null);
-  const [isToolbarOpen, setIsToolbarOpen] = useState(true);
+  const [isToolbarOpen, setIsToolbarOpen] = useState(false);
   const [hasLoadedCachedStrokes, setHasLoadedCachedStrokes] = useState(false);
   const [draftStroke, setDraftStroke] = useState<AnnotationStroke | null>(null);
   const [pageSize, setPageSize] = useState({ width: 0, height: 0 });
   const [pageInput, setPageInput] = useState('1');
-  const [floatingToolbarPosition, setFloatingToolbarPosition] = useState({ x: 24, y: 88 });
+  const [floatingToolbarPosition, setFloatingToolbarPosition] = useState(FLOATING_TOOLBAR_DEFAULT_POSITION);
   const [isFloatingToolbarDragging, setIsFloatingToolbarDragging] = useState(false);
   const [floatingToolbarPanel, setFloatingToolbarPanel] = useState<'tool' | 'color' | 'size' | null>(null);
   const [isDocumentHovered, setIsDocumentHovered] = useState(false);
@@ -162,6 +166,7 @@ export function PdfViewer({ file }: PdfViewerProps) {
   const pendingPageAnchorRef = useRef<'top' | 'bottom' | null>(null);
   const gestureStartScaleRef = useRef<number | null>(null);
   const lastSafariGestureScaleRef = useRef(1);
+  const shouldResetFloatingToolbarPositionRef = useRef(true);
   const floatingToolbarDragRef = useRef<{
     pointerId: number;
     startX: number;
@@ -176,6 +181,20 @@ export function PdfViewer({ file }: PdfViewerProps) {
     setCurrentPdfPage,
     setCurrentPdfNumPages,
   } = useAppContext();
+
+  const getInitialFloatingToolbarPosition = useCallback(() => {
+    const containerRect = viewerRef.current?.getBoundingClientRect();
+    if (!containerRect) return FLOATING_TOOLBAR_DEFAULT_POSITION;
+
+    const toolbarRect = floatingToolbarRef.current?.getBoundingClientRect();
+    const toolbarWidth = toolbarRect?.width ?? FLOATING_TOOLBAR_FALLBACK_WIDTH;
+    const maxX = Math.max(FLOATING_TOOLBAR_PADDING, containerRect.width - toolbarWidth - FLOATING_TOOLBAR_PADDING);
+
+    return {
+      x: Math.min(Math.max((containerRect.width - toolbarWidth) / 2, FLOATING_TOOLBAR_PADDING), maxX),
+      y: FLOATING_TOOLBAR_PADDING,
+    };
+  }, []);
 
   useEffect(() => {
     const url = URL.createObjectURL(file);
@@ -194,7 +213,9 @@ export function PdfViewer({ file }: PdfViewerProps) {
     pendingPageAnchorRef.current = null;
     gestureStartScaleRef.current = null;
     lastSafariGestureScaleRef.current = 1;
-    setFloatingToolbarPosition({ x: 24, y: 88 });
+    shouldResetFloatingToolbarPositionRef.current = true;
+    setFloatingToolbarPosition(getInitialFloatingToolbarPosition());
+    setIsToolbarOpen(false);
     setIsFloatingToolbarDragging(false);
     setFloatingToolbarPanel(null);
     setIsDocumentHovered(false);
@@ -208,7 +229,16 @@ export function PdfViewer({ file }: PdfViewerProps) {
     setHasLoadedCachedStrokes(true);
 
     return () => URL.revokeObjectURL(url);
-  }, [documentCacheId, file, setCurrentPdfNumPages, setCurrentPdfPage, setPopupPosition, setSelectedText, setSelectionHighlightAction]);
+  }, [
+    documentCacheId,
+    file,
+    getInitialFloatingToolbarPosition,
+    setCurrentPdfNumPages,
+    setCurrentPdfPage,
+    setPopupPosition,
+    setSelectedText,
+    setSelectionHighlightAction,
+  ]);
 
   useEffect(() => {
     if (!hasLoadedCachedStrokes) return;
@@ -320,9 +350,9 @@ export function PdfViewer({ file }: PdfViewerProps) {
 
     if (!containerRect) return position;
 
-    const padding = 16;
-    const toolbarWidth = toolbarRect?.width ?? 320;
-    const toolbarHeight = toolbarRect?.height ?? 168;
+    const padding = FLOATING_TOOLBAR_PADDING;
+    const toolbarWidth = toolbarRect?.width ?? FLOATING_TOOLBAR_FALLBACK_WIDTH;
+    const toolbarHeight = toolbarRect?.height ?? FLOATING_TOOLBAR_FALLBACK_HEIGHT;
 
     return {
       x: Math.min(Math.max(position.x, padding), Math.max(padding, containerRect.width - toolbarWidth - padding)),
@@ -781,6 +811,12 @@ export function PdfViewer({ file }: PdfViewerProps) {
     }
 
     const frame = window.requestAnimationFrame(() => {
+      if (shouldResetFloatingToolbarPositionRef.current) {
+        setFloatingToolbarPosition(getInitialFloatingToolbarPosition());
+        shouldResetFloatingToolbarPositionRef.current = false;
+        return;
+      }
+
       setFloatingToolbarPosition((currentPosition) => clampFloatingToolbarPosition(currentPosition));
     });
 
@@ -802,7 +838,7 @@ export function PdfViewer({ file }: PdfViewerProps) {
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('pointerdown', handlePointerDownOutside);
     };
-  }, [clampFloatingToolbarPosition, isToolbarOpen]);
+  }, [clampFloatingToolbarPosition, getInitialFloatingToolbarPosition, isToolbarOpen]);
 
   const handleSafariGestureStart = useCallback((event: Event) => {
     if (!isGestureCaptureActive) return;
@@ -940,111 +976,109 @@ export function PdfViewer({ file }: PdfViewerProps) {
 
   return (
     <div ref={viewerRef} className="relative flex h-full flex-col bg-gray-100" onMouseUp={handleMouseUp}>
-      <div className="border-b bg-white p-3 shadow-sm">
-        <div className="flex flex-col gap-3">
-          {isToolbarOpen && (
-            <>
-              <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-                <div className="-mx-3 min-w-0 flex-1 overflow-x-auto px-3 pb-1">
-                  <div className="flex min-w-max items-center gap-3">
-                    <div className="flex items-center gap-2">
-                      <ToolButton active={activeTool === 'select'} label="선택" onClick={() => setActiveTool('select')}>
-                        <MousePointer2 className="h-4 w-4" />
-                        선택
-                      </ToolButton>
-                      <ToolButton active={activeTool === 'pen'} label="펜" onClick={() => setActiveTool('pen')}>
-                        <Pencil className="h-4 w-4" />
-                        펜
-                      </ToolButton>
-                      <ToolButton
-                        active={activeTool === 'highlighter'}
-                        label="형광펜"
-                        onClick={() => setActiveTool('highlighter')}
-                      >
-                        <Highlighter className="h-4 w-4" />
-                        형광펜
-                      </ToolButton>
-                      <ToolButton active={activeTool === 'underline'} label="밑줄" onClick={() => setActiveTool('underline')}>
-                        <Minus className="h-4 w-4" />
-                        밑줄
-                      </ToolButton>
-                      <ToolButton active={activeTool === 'eraser'} label="지우개" onClick={() => setActiveTool('eraser')}>
-                        <Eraser className="h-4 w-4" />
-                        지우개
-                      </ToolButton>
-                    </div>
-
-                    <div className="h-8 w-px bg-gray-200" aria-hidden="true" />
-
-                    <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-2 py-1.5">
-                      {TOOLBAR_COLORS.map((color) => (
-                        <button
-                          key={color}
-                          type="button"
-                          onClick={() => setActiveColor(color)}
-                          className={`h-6 w-6 rounded-full border-2 transition-transform hover:scale-105 ${
-                            activeColor === color ? 'border-gray-900' : 'border-white'
-                          }`}
-                          style={{ backgroundColor: color }}
-                          title={`색상 ${color}`}
-                        />
-                      ))}
-                    </div>
-
-                    <label className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600">
-                      두께
-                      <input
-                        type="range"
-                        min={2}
-                        max={18}
-                        step={1}
-                        value={strokeSize}
-                        onChange={(event) => setStrokeSize(Number(event.target.value))}
-                        className="w-24 accent-blue-600"
-                      />
-                      <span className="w-5 text-right text-xs text-gray-500">{strokeSize}</span>
-                    </label>
-
-                    <button
-                      type="button"
-                      onClick={clearCurrentPage}
-                      disabled={currentPageStrokes.length === 0}
-                      className="inline-flex h-9 items-center gap-2 rounded-lg border border-gray-200 px-3 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+      {isToolbarOpen && (
+        <div className="border-b bg-white p-3 shadow-sm">
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+              <div className="-mx-3 min-w-0 flex-1 overflow-x-auto px-3 pb-1">
+                <div className="flex min-w-max items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <ToolButton active={activeTool === 'select'} label="선택" onClick={() => setActiveTool('select')}>
+                      <MousePointer2 className="h-4 w-4" />
+                      선택
+                    </ToolButton>
+                    <ToolButton active={activeTool === 'pen'} label="펜" onClick={() => setActiveTool('pen')}>
+                      <Pencil className="h-4 w-4" />
+                      펜
+                    </ToolButton>
+                    <ToolButton
+                      active={activeTool === 'highlighter'}
+                      label="형광펜"
+                      onClick={() => setActiveTool('highlighter')}
                     >
-                      <Trash2 className="h-4 w-4" />
-                      현재 페이지 지우기
-                    </button>
+                      <Highlighter className="h-4 w-4" />
+                      형광펜
+                    </ToolButton>
+                    <ToolButton active={activeTool === 'underline'} label="밑줄" onClick={() => setActiveTool('underline')}>
+                      <Minus className="h-4 w-4" />
+                      밑줄
+                    </ToolButton>
+                    <ToolButton active={activeTool === 'eraser'} label="지우개" onClick={() => setActiveTool('eraser')}>
+                      <Eraser className="h-4 w-4" />
+                      지우개
+                    </ToolButton>
                   </div>
-                </div>
 
-                <div className="hidden shrink-0 xl:flex xl:items-center xl:justify-end">
+                  <div className="h-8 w-px bg-gray-200" aria-hidden="true" />
+
+                  <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-2 py-1.5">
+                    {TOOLBAR_COLORS.map((color) => (
+                      <button
+                        key={color}
+                        type="button"
+                        onClick={() => setActiveColor(color)}
+                        className={`h-6 w-6 rounded-full border-2 transition-transform hover:scale-105 ${
+                          activeColor === color ? 'border-gray-900' : 'border-white'
+                        }`}
+                        style={{ backgroundColor: color }}
+                        title={`색상 ${color}`}
+                      />
+                    ))}
+                  </div>
+
+                  <label className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600">
+                    두께
+                    <input
+                      type="range"
+                      min={2}
+                      max={18}
+                      step={1}
+                      value={strokeSize}
+                      onChange={(event) => setStrokeSize(Number(event.target.value))}
+                      className="w-24 accent-blue-600"
+                    />
+                    <span className="w-5 text-right text-xs text-gray-500">{strokeSize}</span>
+                  </label>
+
                   <button
                     type="button"
-                    onClick={() => setIsToolbarOpen((current) => !current)}
-                    className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100"
-                    aria-expanded={isToolbarOpen}
+                    onClick={clearCurrentPage}
+                    disabled={currentPageStrokes.length === 0}
+                    className="inline-flex h-9 items-center gap-2 rounded-lg border border-gray-200 px-3 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {isToolbarOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                    {isToolbarOpen ? '도구 숨기기' : '도구 열기'}
+                    <Trash2 className="h-4 w-4" />
+                    현재 페이지 지우기
                   </button>
                 </div>
               </div>
 
-              <div className="flex justify-end xl:hidden">
+              <div className="hidden shrink-0 xl:flex xl:items-center xl:justify-end">
                 <button
                   type="button"
-                  onClick={() => setIsToolbarOpen((current) => !current)}
-                  className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100"
+                  onClick={() => setIsToolbarOpen(false)}
+                  className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100"
                   aria-expanded={isToolbarOpen}
                 >
-                  {isToolbarOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                  {isToolbarOpen ? '도구 숨기기' : '도구 열기'}
+                  <ChevronUp className="h-4 w-4" />
+                  도구 숨기기
                 </button>
               </div>
-            </>
-          )}
+            </div>
+
+            <div className="flex justify-end xl:hidden">
+              <button
+                type="button"
+                onClick={() => setIsToolbarOpen(false)}
+                className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100"
+                aria-expanded={isToolbarOpen}
+              >
+                <ChevronUp className="h-4 w-4" />
+                도구 숨기기
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
 
       {!isToolbarOpen && (
         <div
@@ -1062,6 +1096,19 @@ export function PdfViewer({ file }: PdfViewerProps) {
             >
               <GripVertical className="h-4 w-4" />
             </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setFloatingToolbarPanel(null);
+                setIsToolbarOpen(true);
+              }}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-gray-600 transition-colors hover:bg-gray-100"
+              title="도구 막대 열기"
+              aria-label="도구 막대 열기"
+            >
+              <ChevronDown className="h-4 w-4" />
+            </button>
 
             <FloatingIconButton
               active={floatingToolbarPanel === 'tool'}
