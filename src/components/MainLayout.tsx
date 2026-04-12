@@ -1,4 +1,4 @@
-import React, { useCallback, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { Uploader } from './Uploader';
 import { PdfViewer } from './PdfViewer';
@@ -9,9 +9,16 @@ import { SettingsPage } from './SettingsPage';
 import { BookOpen, FolderOpen, MessageSquare, Settings } from 'lucide-react';
 import { getFileTypeFromFile, SUPPORTED_FILE_ACCEPT } from '../lib/fileUtils';
 
+const CHAT_PANEL_WIDTH_STORAGE_KEY = 'studai.chat-panel-width';
+const DEFAULT_CHAT_PANEL_WIDTH = 416;
+const MIN_CHAT_PANEL_WIDTH = 320;
+const MAX_CHAT_PANEL_WIDTH = 800;
+
 export function MainLayout() {
   const { currentFile, currentView, fileType, isChatOpen, setChatOpen, setCurrentView, setFile } = useAppContext();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const isResizingChatPanelRef = useRef(false);
+  const [chatPanelWidth, setChatPanelWidth] = useState(DEFAULT_CHAT_PANEL_WIDTH);
 
   const handleOpenFilePicker = useCallback(() => {
     fileInputRef.current?.click();
@@ -32,6 +39,53 @@ export function MainLayout() {
 
     input.value = '';
   }, [setChatOpen, setFile]);
+
+  const clampChatPanelWidth = useCallback((width: number) => {
+    return Math.min(MAX_CHAT_PANEL_WIDTH, Math.max(MIN_CHAT_PANEL_WIDTH, width));
+  }, []);
+
+  useEffect(() => {
+    const storedWidth = window.localStorage.getItem(CHAT_PANEL_WIDTH_STORAGE_KEY);
+    if (!storedWidth) return;
+
+    const parsedWidth = Number(storedWidth);
+    if (Number.isFinite(parsedWidth)) {
+      setChatPanelWidth(clampChatPanelWidth(parsedWidth));
+    }
+  }, [clampChatPanelWidth]);
+
+  useEffect(() => {
+    window.localStorage.setItem(CHAT_PANEL_WIDTH_STORAGE_KEY, String(chatPanelWidth));
+  }, [chatPanelWidth]);
+
+  useEffect(() => {
+    const handleMouseMove = (event: MouseEvent) => {
+      if (!isResizingChatPanelRef.current) return;
+      setChatPanelWidth(clampChatPanelWidth(window.innerWidth - event.clientX));
+    };
+
+    const stopResizing = () => {
+      if (!isResizingChatPanelRef.current) return;
+      isResizingChatPanelRef.current = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', stopResizing);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', stopResizing);
+    };
+  }, [clampChatPanelWidth]);
+
+  const handleChatResizeStart = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    isResizingChatPanelRef.current = true;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }, []);
 
   return (
     <div className="flex h-screen w-full flex-col overflow-hidden bg-gray-50">
@@ -94,7 +148,21 @@ export function MainLayout() {
           </main>
 
           {/* Chat Panel */}
-          {currentFile && <ChatPanel />}
+          {currentFile && isChatOpen && (
+            <div className="relative h-full shrink-0" style={{ width: `${chatPanelWidth}px` }}>
+              <div
+                onMouseDown={handleChatResizeStart}
+                onDoubleClick={() => setChatPanelWidth(DEFAULT_CHAT_PANEL_WIDTH)}
+                className="group absolute inset-y-0 left-0 z-10 w-3 -translate-x-1/2 cursor-col-resize"
+                title="드래그해서 채팅 패널 너비 조절"
+                aria-label="채팅 패널 너비 조절"
+                role="separator"
+              >
+                <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-gray-200 transition-colors group-hover:bg-blue-400" />
+              </div>
+              <ChatPanel />
+            </div>
+          )}
         </div>
       )}
     </div>

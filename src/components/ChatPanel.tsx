@@ -170,7 +170,7 @@ export function ChatPanel() {
   if (!isChatOpen) return null;
 
   return (
-    <div className="flex h-full w-[26rem] flex-col border-l bg-white shadow-xl">
+    <div className="flex h-full w-full flex-col border-l bg-white shadow-xl">
       <div className="border-b px-4 py-3">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -178,9 +178,6 @@ export function ChatPanel() {
               <Bot className="h-5 w-5 text-blue-600" />
               <h3 className="font-semibold text-gray-900">AI Assistant</h3>
             </div>
-            <p className="mt-1 text-xs text-gray-500">
-              {formatProviderLabel(selectedProvider)} · {selectedModel || 'No model detected'}
-            </p>
           </div>
           <button
             onClick={() => setChatOpen(false)}
