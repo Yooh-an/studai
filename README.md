@@ -80,7 +80,7 @@ npm run start
 Studai's PDF reading and chat flow is document-aware:
 
 - internal PDF navigation links such as table-of-contents/bookmark jumps are preserved through the viewer, including destination-based links and common named page actions
-- natural-language requests such as `현재 페이지 설명해줘`, `15페이지 요약해줘`, or `10~12페이지 핵심 정리해줘` are resolved against the open PDF
+- natural-language requests such as `Explain the current page`, `Summarize page 15`, or `Give me the key points from pages 10-12` are resolved against the open PDF
 - figure/table references without explicit page wording prefer the **currently viewed page** first
 - text PDFs use extracted page text as primary evidence
 - scan-heavy PDFs can attach rendered page images to the model when text extraction is weak
