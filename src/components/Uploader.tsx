@@ -1,6 +1,6 @@
 import React, { useCallback, useRef } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { UploadCloud, FileText, Book } from 'lucide-react';
+import { UploadCloud, FileText } from 'lucide-react';
 import { getFileTypeFromFile, SUPPORTED_FILE_ACCEPT } from '../lib/fileUtils';
 
 export function Uploader() {
@@ -17,7 +17,7 @@ export function Uploader() {
     if (fileType) {
       setFile(file, fileType);
     } else {
-      alert('PDF 또는 EPUB 파일만 업로드 가능합니다.');
+      alert('PDF 파일만 업로드 가능합니다.');
     }
 
     input.value = '';
@@ -37,10 +37,6 @@ export function Uploader() {
           <div className="flex items-center gap-2 text-sm text-gray-600">
             <FileText className="h-5 w-5 text-red-500" />
             PDF 지원
-          </div>
-          <div className="flex items-center gap-2 text-sm text-gray-600">
-            <Book className="h-5 w-5 text-green-500" />
-            EPUB 지원
           </div>
         </div>
 

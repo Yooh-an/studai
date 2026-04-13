@@ -1,11 +1,10 @@
 # Studai
 
-Studai is a local-first study workspace for reading PDF and EPUB documents, annotating them, and asking AI questions about selected text or the document itself.
+Studai is a local-first study workspace for reading PDF documents, annotating them, and asking AI questions about selected text or the document itself.
 
 ## Highlights
 
 - **PDF reader** with page navigation, zoom controls, annotations, restored reading state, and working internal TOC/bookmark links
-- **EPUB reader** powered by `react-reader` with saved reading position
 - **Document-aware AI chat** that can answer natural-language PDF questions like current page, specific pages, and short page ranges
 - **Page-image fallback for scan PDFs** so figure/table questions can still use the currently viewed page image when extractable text is sparse
 - **Ask AI from selection** via an inline popup when text is highlighted
@@ -35,7 +34,6 @@ The UI uses built-in application API routes for chat, model discovery, and provi
 | App framework | Next.js 16, React 19, TypeScript |
 | Styling | Tailwind CSS v4 |
 | PDF | `react-pdf`, `pdfjs-dist` |
-| EPUB | `epubjs`, `react-reader` |
 | AI runtime | Next.js Route Handlers + local Codex CLI |
 | Motion | `framer-motion` |
 | Markdown | `react-markdown`, `remark-gfm` |
@@ -127,7 +125,6 @@ studai/
 │   │   ├── AskAIPopup.tsx
 │   │   ├── Auth.tsx
 │   │   ├── ChatPanel.tsx
-│   │   ├── EpubViewer.tsx
 │   │   ├── MainLayout.tsx
 │   │   ├── PdfViewer.tsx
 │   │   ├── SettingsPage.tsx

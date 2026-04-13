@@ -3,7 +3,7 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: 'StudAI',
-  description: 'Local-first study workspace with PDF/EPUB reading and Codex chat.',
+  description: 'Local-first study workspace with PDF reading and Codex chat.',
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

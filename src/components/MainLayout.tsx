@@ -34,7 +34,7 @@ export function MainLayout() {
       setFile(file, nextFileType);
       setChatOpen(true);
     } else {
-      alert('PDF 또는 EPUB 파일만 업로드 가능합니다.');
+      alert('PDF 파일만 업로드 가능합니다.');
     }
 
     input.value = '';
