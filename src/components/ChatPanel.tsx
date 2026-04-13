@@ -313,7 +313,6 @@ export function ChatPanel() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="질문 입력... (Shift+Enter로 줄바꿈)"
             className="w-full resize-none rounded-2xl border border-gray-300 bg-gray-50 px-4 py-3 pr-12 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             style={{ fontSize: `${chatFontSize}px` }}
           />
