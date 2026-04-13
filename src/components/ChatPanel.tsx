@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { X, Send, Bot, User, Loader2, ChevronDown, Sparkles } from 'lucide-react';
+import { X, Send, Bot, User, Loader2, ChevronDown, Sparkles, Settings } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import TextareaAutosize from 'react-textarea-autosize';
@@ -197,66 +197,67 @@ export function ChatPanel() {
   return (
     <div className="flex h-full w-full flex-col border-l bg-white shadow-xl">
       <div className="border-b px-4 py-3">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <Bot className="h-5 w-5 text-blue-600" />
-              <h3 className="font-semibold text-gray-900">AI Assistant</h3>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2" ref={pickerRef}>
+            <Bot className="h-5 w-5 shrink-0 text-blue-600" />
+
+            <div className="relative min-w-0">
+              <button
+                onClick={() => setShowModelPicker((open) => !open)}
+                className="inline-flex max-w-[220px] min-w-0 items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100"
+              >
+                <Sparkles className="h-3.5 w-3.5 shrink-0 text-blue-500" />
+                <span className="truncate">{selectedModel || formatProviderLabel(selectedProvider)}</span>
+                <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+              </button>
+
+              {showModelPicker && (
+                <div className="absolute left-0 top-full z-10 mt-2 max-h-56 w-max min-w-full overflow-y-auto rounded-xl border border-gray-200 bg-white p-1 shadow-lg">
+                  {modelsLoading ? (
+                    <div className="flex items-center gap-2 px-3 py-2 text-xs text-gray-500">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      Loading models...
+                    </div>
+                  ) : models.length === 0 ? (
+                    <div className="px-3 py-2 text-xs text-gray-500">
+                      No models reported by the active provider.
+                    </div>
+                  ) : (
+                    models.map((model) => (
+                      <button
+                        key={model.id}
+                        onClick={() => {
+                          setSelectedModel(model.id);
+                          setShowModelPicker(false);
+                        }}
+                        className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm ${selectedModel === model.id ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-50'}`}
+                      >
+                        <span className="truncate">{model.display_name || model.id}</span>
+                        {selectedModel === model.id && <Checkmark />}
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
             </div>
+
+            <button
+              onClick={() => setCurrentView('settings')}
+              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-gray-200 text-gray-600 hover:bg-gray-50"
+              aria-label="Open settings"
+            >
+              <Settings className="h-4 w-4" />
+            </button>
           </div>
+
           <button
             onClick={() => setChatOpen(false)}
-            className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+            className="shrink-0 rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+            aria-label="Close chat"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
-
-        <div className="mt-3 flex items-center gap-2" ref={pickerRef}>
-          <button
-            onClick={() => setShowModelPicker((open) => !open)}
-            className="inline-flex min-w-0 items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100"
-          >
-            <Sparkles className="h-3.5 w-3.5 text-blue-500" />
-            <span className="truncate">{selectedModel || formatProviderLabel(selectedProvider)}</span>
-            <ChevronDown className="h-3.5 w-3.5" />
-          </button>
-          <button
-            onClick={() => setCurrentView('settings')}
-            className="rounded-full border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
-          >
-            Settings
-          </button>
-        </div>
-
-        {showModelPicker && (
-          <div className="mt-2 max-h-56 overflow-y-auto rounded-xl border border-gray-200 bg-white p-1 shadow-lg">
-            {modelsLoading ? (
-              <div className="flex items-center gap-2 px-3 py-2 text-xs text-gray-500">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Loading models...
-              </div>
-            ) : models.length === 0 ? (
-              <div className="px-3 py-2 text-xs text-gray-500">
-                No models reported by the active provider.
-              </div>
-            ) : (
-              models.map((model) => (
-                <button
-                  key={model.id}
-                  onClick={() => {
-                    setSelectedModel(model.id);
-                    setShowModelPicker(false);
-                  }}
-                  className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm ${selectedModel === model.id ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-50'}`}
-                >
-                  <span className="truncate">{model.display_name || model.id}</span>
-                  {selectedModel === model.id && <Checkmark />}
-                </button>
-              ))
-            )}
-          </div>
-        )}
       </div>
 
       <div className="flex-1 space-y-4 overflow-y-auto p-4">
