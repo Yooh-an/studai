@@ -71,39 +71,6 @@ test('normalizes prose plus naked display math block', () => {
   );
 });
 
-test('normalizes parenthesized inline math in section headings without swallowing prose', () => {
-  const input = '2. (e_i = E[i])가 뜻하는 것';
-  const output = normalizeAssistantMarkdown(input);
-
-  assert.equal(output, '2. ($e_i = E[i]$)가 뜻하는 것');
-});
-
-test('normalizes comma-separated math sequences and wrapped declarations', () => {
-  const input = [
-    '- 토큰 ID: ((i_1, i_2, i_3, i_4))',
-    '',
-    '[ E[i_1], E[i_2], E[i_3], E[i_4] ]',
-    '',
-    '[ Z \\in \\mathbb{R}^{T \\times d} ]',
-    '',
-    '[ h_t^{(0)} = E[i_t] + P[t] ]',
-  ].join('\n');
-  const output = normalizeAssistantMarkdown(input);
-
-  assert.equal(
-    output,
-    [
-      '- 토큰 ID: ($i_1, i_2, i_3, i_4$)',
-      '',
-      '$E[i_1], E[i_2], E[i_3], E[i_4]$',
-      '',
-      '$Z \\in \\mathbb{R}^{T \\times d}$',
-      '',
-      '$h_t^{(0)} = E[i_t] + P[t]$',
-    ].join('\n'),
-  );
-});
-
 test('normalizes screenshot-like mixed math response coherently', () => {
   const input = [
     '1. 토큰 임베딩 행렬 E \\in \\mathbb{R}^{V \\times d}',

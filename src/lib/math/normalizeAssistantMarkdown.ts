@@ -38,10 +38,6 @@ function stripOuterMathDelimiters(candidate: string) {
   return trimmed;
 }
 
-function hasMathSequence(text: string) {
-  return /(?:[A-Za-z](?:_[A-Za-z0-9()]+|\^\{[^}]+\})?(?:\[[^\]]+\])?|\\dots|\\vdots)(?:\s*,\s*(?:[A-Za-z](?:_[A-Za-z0-9()]+|\^\{[^}]+\})?(?:\[[^\]]+\])?|\\dots|\\vdots)){1,}/.test(text);
-}
-
 function isLikelyMathCandidate(candidate: string) {
   const text = stripOuterMathDelimiters(candidate);
   if (!text || text.length < 2) return false;
@@ -51,9 +47,8 @@ function isLikelyMathCandidate(candidate: string) {
   const hasMathOperator = /[=<>+\-*/]|\\(?:in|times|cdot|neq|leq|geq|approx|quad|sum|int|frac|sqrt|mathbb|mathbf|mathrm|begin|end|vdots|dots)/.test(text);
   const hasMatrixOrCases = /\\begin\{(?:bmatrix|pmatrix|matrix|cases|aligned|align\*?)\}/.test(text);
   const hasIndexing = /[A-Za-z]\[[A-Za-z0-9_]+\]/.test(text);
-  const hasSequence = hasMathSequence(text);
 
-  const score = Number(hasLatexCommand) + Number(hasSubOrSup) + Number(hasMathOperator) + Number(hasMatrixOrCases) + Number(hasIndexing) + Number(hasSequence);
+  const score = Number(hasLatexCommand) + Number(hasSubOrSup) + Number(hasMathOperator) + Number(hasMatrixOrCases) + Number(hasIndexing);
   if (score < 2) return false;
 
   try {
@@ -163,20 +158,6 @@ function normalizeLatexEnvironments(input: string) {
   });
 }
 
-function normalizeParenthesizedMath(input: string) {
-  return input
-    .replace(/\(\(([^()\n]+)\)\)/g, (match, content: string) => {
-      const trimmed = content.trim();
-      if (!isLikelyMathCandidate(trimmed)) return match;
-      return `(${wrapInlineMath(trimmed)})`;
-    })
-    .replace(/\(([^()\n]+)\)/g, (match, content: string) => {
-      const trimmed = content.trim();
-      if (!isLikelyMathCandidate(trimmed)) return match;
-      return `(${wrapInlineMath(trimmed)})`;
-    });
-}
-
 function splitLinePrefix(line: string) {
   const match = line.match(/^(\s*(?:[-*+]\s+|\d+\.\s+)?)?(.*)$/);
   return {
@@ -212,23 +193,6 @@ function isLikelyMathContinuationLine(content: string) {
   return false;
 }
 
-function extractLeadingInlineMathCandidate(text: string) {
-  const patterns = [
-    /^([A-Za-z](?:_[A-Za-z0-9()]+|\^\{[^}]+\})?(?:\[[^\]]+\])?\s*=\s*[A-Za-z](?:_[A-Za-z0-9()]+|\^\{[^}]+\})?(?:\[[^\]]+\])?(?:\s*(?:[+\-*/]|\\times|\\cdot)\s*[A-Za-z](?:_[A-Za-z0-9()]+|\^\{[^}]+\})?(?:\[[^\]]+\])?)*)/,
-    /^([A-Za-z](?:_[A-Za-z0-9()]+|\^\{[^}]+\})?\s*\\in\s*\{?[^가-힣,.;\n]+\}?)/,
-    /^((?:[A-Za-z](?:_[A-Za-z0-9()]+|\^\{[^}]+\})?(?:\[[^\]]+\])?|\\dots|\\vdots)(?:\s*,\s*(?:[A-Za-z](?:_[A-Za-z0-9()]+|\^\{[^}]+\})?(?:\[[^\]]+\])?|\\dots|\\vdots)){1,})/,
-  ];
-
-  for (const pattern of patterns) {
-    const match = text.match(pattern);
-    if (!match) continue;
-    const candidate = match[1]?.trim();
-    if (candidate && isLikelyMathCandidate(candidate)) return candidate;
-  }
-
-  return null;
-}
-
 function normalizeNakedMathBlocks(input: string, resolvePlaceholder: (text: string) => string) {
   const lines = input.split('\n');
   const output: string[] = [];
@@ -255,9 +219,7 @@ function normalizeNakedMathBlocks(input: string, resolvePlaceholder: (text: stri
     }
 
     const prose = content.slice(0, mathStart).trimEnd();
-    const mathSuffix = content.slice(mathStart).trim();
-    const mathHead = extractLeadingInlineMathCandidate(mathSuffix) ?? mathSuffix;
-    const suffixRemainder = mathSuffix.slice(mathHead.length).trim();
+    const mathHead = content.slice(mathStart).trim();
     const continuationLines: string[] = [];
     let forceContinuation = /(?:=|\\quad|\\in)\s*$/.test(mathHead);
 
@@ -280,7 +242,7 @@ function normalizeNakedMathBlocks(input: string, resolvePlaceholder: (text: stri
       continue;
     }
 
-    if (!suffixRemainder && isLikelyMathCandidate(mathHead)) {
+    if (isLikelyMathCandidate(mathHead)) {
       output.push(`${prefix}${prose ? `${prose} ` : ''}${wrapInlineMath(mathHead)}`.trimEnd());
       continue;
     }
@@ -360,22 +322,14 @@ export function normalizeAssistantMarkdown(input: string) {
     /(\$\$[\s\S]*?\$\$)|(\$[^\n$]+\$)/g,
     'LINE_MATH',
   );
-  const parenthesisNormalized = normalizeParenthesizedMath(protectedLineGeneratedMath.output);
-  const protectedParenthesisMath = protectSegments(
-    parenthesisNormalized,
-    /(\$\$[\s\S]*?\$\$)|(\$[^\n$]+\$)/g,
-    'PAREN_MATH',
-  );
-  const fragmentNormalized = normalizeInlineMathFragments(protectedParenthesisMath.output);
+  const fragmentNormalized = normalizeInlineMathFragments(protectedLineGeneratedMath.output);
   const cleaned = normalizeWhitespaceAroundDisplayMath(cleanupDanglingMathBrackets(fragmentNormalized));
 
   const restored = protectedFences.restore(
     protectedInlineCode.restore(
       protectedExistingMath.restore(
         protectedGeneratedMath.restore(
-          protectedLineGeneratedMath.restore(
-            protectedParenthesisMath.restore(cleaned),
-          ),
+          protectedLineGeneratedMath.restore(cleaned),
         ),
       ),
     ),
