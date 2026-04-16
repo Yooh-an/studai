@@ -44,7 +44,7 @@ function isLikelyMathCandidate(candidate: string) {
 
   const hasLatexCommand = /\\[A-Za-z]+/.test(text);
   const hasSubOrSup = /[A-Za-z0-9)}\]][_^][A-Za-z0-9({\\]/.test(text.replace(/\s+/g, ''));
-  const hasMathOperator = /[=<>+\-*/]|\\(?:in|times|cdot|neq|leq|geq|approx|quad|sum|int|frac|sqrt|mathbb|mathbf|mathrm|begin|end|vdots)/.test(text);
+  const hasMathOperator = /[=<>+\-*/]|\\(?:in|times|cdot|neq|leq|geq|approx|quad|sum|int|frac|sqrt|mathbb|mathbf|mathrm|begin|end|vdots|dots)/.test(text);
   const hasMatrixOrCases = /\\begin\{(?:bmatrix|pmatrix|matrix|cases|aligned|align\*?)\}/.test(text);
   const hasIndexing = /[A-Za-z]\[[A-Za-z0-9_]+\]/.test(text);
 
@@ -61,6 +61,16 @@ function isLikelyMathCandidate(candidate: string) {
   } catch {
     return false;
   }
+}
+
+function wrapInlineMath(rawContent: string) {
+  const content = stripOuterMathDelimiters(rawContent);
+  return `$${content}$`;
+}
+
+function wrapDisplayMath(rawContent: string) {
+  const content = stripOuterMathDelimiters(rawContent);
+  return `$$\n${content}\n$$`;
 }
 
 function isBracketWrapperStart(input: string, index: number) {
@@ -90,17 +100,6 @@ function findMatchingBracket(input: string, startIndex: number) {
   return -1;
 }
 
-function wrapMathContent(rawContent: string, displayMode: boolean) {
-  const content = stripOuterMathDelimiters(rawContent);
-  if (!content) return rawContent;
-
-  if (displayMode) {
-    return `$$\n${content}\n$$`;
-  }
-
-  return `$${content}$`;
-}
-
 function normalizeBalancedBracketMath(input: string) {
   let result = '';
 
@@ -125,11 +124,8 @@ function normalizeBalancedBracketMath(input: string) {
     }
 
     const displayMode = /\n/.test(rawContent) || /\\begin\{/.test(rawContent);
-    const replacement = wrapMathContent(rawContent, displayMode);
-
     if (displayMode && result.length > 0) {
       result = result.replace(/[ \t]+$/, '');
-
       if (result.endsWith('\n\n')) {
         // already separated
       } else if (result.endsWith('\n')) {
@@ -139,7 +135,7 @@ function normalizeBalancedBracketMath(input: string) {
       }
     }
 
-    result += replacement;
+    result += displayMode ? wrapDisplayMath(rawContent) : wrapInlineMath(rawContent);
 
     if (displayMode) {
       const nextChar = input[closingIndex + 1] ?? '';
@@ -156,9 +152,119 @@ function normalizeBalancedBracketMath(input: string) {
 
 function normalizeLatexEnvironments(input: string) {
   return input.replace(/\\begin\{([a-zA-Z*]+)\}[\s\S]+?\\end\{\1\}/g, (match) => {
-    if (!isLikelyMathCandidate(match)) return match;
-    return wrapMathContent(match, true);
+    const content = match.trim();
+    if (!isLikelyMathCandidate(content)) return match;
+    return wrapDisplayMath(content);
   });
+}
+
+function splitLinePrefix(line: string) {
+  const match = line.match(/^(\s*(?:[-*+]\s+|\d+\.\s+)?)?(.*)$/);
+  return {
+    prefix: match?.[1] ?? '',
+    content: match?.[2] ?? line,
+  };
+}
+
+function isMathPlaceholder(text: string) {
+  return /__STUDAI_(?:MATH|GENERATED_MATH)_\d+__/.test(text.trim());
+}
+
+function findMathStartIndex(content: string) {
+  const patterns = [
+    /\b[A-Za-z](?:_[A-Za-z0-9()]+|\^\{[^}]+\})?(?:\[[^\]]+\])?\s*(?==|\\in|\\times|\\quad|\\cdot|\\neq|\\leq|\\geq|\\approx)/,
+    /\\(?:mathbb|mathbf|mathrm|frac|sum|int|sqrt|quad|dots|vdots|cdots|in|times|neq|leq|geq|text)\b/,
+    /\b[A-Z]\[[^\]]+\]/,
+  ];
+
+  const indexes = patterns
+    .map((pattern) => content.search(pattern))
+    .filter((index) => index >= 0);
+
+  return indexes.length > 0 ? Math.min(...indexes) : -1;
+}
+
+function isLikelyMathContinuationLine(content: string) {
+  const trimmed = content.trim();
+  if (!trimmed) return false;
+  if (isMathPlaceholder(trimmed)) return true;
+  if (/^\\(?:in|quad|vdots|dots|cdots|neq|times|begin|end)/.test(trimmed)) return true;
+  if (/^[A-Za-z](?:_[A-Za-z0-9()]+|\^\{[^}]+\})?(?:\[[^\]]+\])?(?:\s+[A-Za-z](?:_[A-Za-z0-9()]+|\^\{[^}]+\})?(?:\[[^\]]+\])?)*\s*(?:=|\\in|\\times)?/.test(trimmed) && isLikelyMathCandidate(trimmed)) return true;
+  return false;
+}
+
+function normalizeNakedMathBlocks(input: string, resolvePlaceholder: (text: string) => string) {
+  const lines = input.split('\n');
+  const output: string[] = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const { prefix, content } = splitLinePrefix(line);
+    const trimmedContent = content.trim();
+
+    if (!trimmedContent) {
+      output.push(line);
+      continue;
+    }
+
+    if (isMathPlaceholder(trimmedContent)) {
+      output.push(line);
+      continue;
+    }
+
+    const mathStart = findMathStartIndex(content);
+    if (mathStart === -1) {
+      output.push(line);
+      continue;
+    }
+
+    const prose = content.slice(0, mathStart).trimEnd();
+    const mathHead = content.slice(mathStart).trim();
+    const continuationLines: string[] = [];
+    let forceContinuation = /(?:=|\\quad|\\in)\s*$/.test(mathHead);
+
+    while (index + 1 < lines.length) {
+      const next = lines[index + 1];
+      const nextContent = splitLinePrefix(next).content.trim();
+      if (!nextContent) break;
+      if (!forceContinuation && !isLikelyMathContinuationLine(nextContent)) break;
+      continuationLines.push(isMathPlaceholder(nextContent) ? stripOuterMathDelimiters(resolvePlaceholder(nextContent)) : nextContent);
+      forceContinuation = /(?:=|\\quad|\\in)\s*$/.test(nextContent);
+      index += 1;
+    }
+
+    if (continuationLines.length > 0) {
+      if (prose) {
+        output.push(`${prefix}${prose}`.trimEnd());
+        output.push('');
+      }
+      output.push(wrapDisplayMath([mathHead, ...continuationLines].join('\n')));
+      continue;
+    }
+
+    if (isLikelyMathCandidate(mathHead)) {
+      output.push(`${prefix}${prose ? `${prose} ` : ''}${wrapInlineMath(mathHead)}`.trimEnd());
+      continue;
+    }
+
+    output.push(line);
+  }
+
+  return output.join('\n');
+}
+
+function normalizeInlineMathFragments(input: string) {
+  const patterns = [
+    /([A-Za-z](?:_[A-Za-z0-9()]+|\^\{[^}]+\})?(?:\[[^\]]+\])?\s*=\s*[A-Za-z](?:_[A-Za-z0-9()]+|\^\{[^}]+\})?(?:\[[^\]]+\])?(?:\s*(?:[+\-*/]|\\times|\\cdot)\s*[A-Za-z](?:_[A-Za-z0-9()]+|\^\{[^}]+\})?(?:\[[^\]]+\])?)*)/g,
+    /([A-Za-z](?:_[A-Za-z0-9()]+|\^\{[^}]+\})?\s*\\in\s*\{?[^가-힣,.;\n]+\}?)/g,
+    /(h_[A-Za-z0-9]+\^\{[^}]+\}\s*=\s*[^가-힣\n]+?)(?=\s*\(|$)/g,
+  ];
+
+  return patterns.reduce((current, pattern) => current.replace(pattern, (match) => {
+    const content = match.trim();
+    if (!isLikelyMathCandidate(content)) return match;
+    return wrapInlineMath(content);
+  }), input);
 }
 
 function cleanupDanglingMathBrackets(input: string) {
@@ -167,18 +273,24 @@ function cleanupDanglingMathBrackets(input: string) {
     .replace(/(?<=\$\$)\s*\]\s*(?=\n|$)/g, '')
     .replace(/(^|\n)\s*\]\s*(?=\n|$)/g, '$1')
     .replace(/(\$[^\n$]+\$)\s*\]/g, '$1')
-    .replace(/\[\s*(\$[^\n$]+\$)/g, '$1');
+    .replace(/\[\s*(\$[^\n$]+\$)/g, '$1')
+    .replace(/\]\s*\[(?=\$)/g, '\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n');
 }
 
 function normalizeWhitespaceAroundDisplayMath(input: string) {
   return input
-    .replace(/([^\n])\n?(\$\$\n)/g, '$1\n\n$2')
-    .replace(/(\n\$\$)([^\n])/g, '$1\n$2')
-    .replace(/(\n\$\$\n)([^\n])/g, '$1$2')
-    .replace(/([^\n])(\n\$\$\n)(?!\n)/g, '$1$2')
+    .replace(/([^\n])(\n\$\$\n)/g, '$1\n$2')
     .replace(/(\n\$\$)([^\n])/g, '$1\n$2')
     .replace(/(\n\$\$\n)(\n{3,})/g, '$1\n')
     .replace(/\n{3,}/g, '\n\n');
+}
+
+function mergeAdjacentDisplayAndInlineMath(input: string) {
+  return input.replace(/\$\$\n([\s\S]*?)\n\$\$\n\s*\$([^\n$]+)\$/g, (_, block, inline) => {
+    return `$$\n${block}\n${inline}\n$$`;
+  });
 }
 
 export function normalizeAssistantMarkdown(input: string) {
@@ -195,11 +307,33 @@ export function normalizeAssistantMarkdown(input: string) {
   );
 
   const environmentNormalized = normalizeLatexEnvironments(protectedExistingMath.output);
-  const cleaned = normalizeWhitespaceAroundDisplayMath(cleanupDanglingMathBrackets(environmentNormalized));
+  const protectedGeneratedMath = protectSegments(
+    environmentNormalized,
+    /(\$\$[\s\S]*?\$\$)|(\$[^\n$]+\$)/g,
+    'GENERATED_MATH',
+  );
 
-  return protectedFences.restore(
+  const lineNormalized = normalizeNakedMathBlocks(
+    protectedGeneratedMath.output,
+    (text) => protectedGeneratedMath.restore(text),
+  );
+  const protectedLineGeneratedMath = protectSegments(
+    lineNormalized,
+    /(\$\$[\s\S]*?\$\$)|(\$[^\n$]+\$)/g,
+    'LINE_MATH',
+  );
+  const fragmentNormalized = normalizeInlineMathFragments(protectedLineGeneratedMath.output);
+  const cleaned = normalizeWhitespaceAroundDisplayMath(cleanupDanglingMathBrackets(fragmentNormalized));
+
+  const restored = protectedFences.restore(
     protectedInlineCode.restore(
-      protectedExistingMath.restore(cleaned),
+      protectedExistingMath.restore(
+        protectedGeneratedMath.restore(
+          protectedLineGeneratedMath.restore(cleaned),
+        ),
+      ),
     ),
   );
+
+  return normalizeWhitespaceAroundDisplayMath(mergeAdjacentDisplayAndInlineMath(restored));
 }
