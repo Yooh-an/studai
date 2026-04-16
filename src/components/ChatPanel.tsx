@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { X, Send, Bot, User, Loader2, ChevronDown, Sparkles, Settings, Plus, History } from 'lucide-react';
+import { X, Send, Bot, User, Loader2, ChevronDown, Sparkles, Plus, History } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import TextareaAutosize from 'react-textarea-autosize';
@@ -35,7 +35,6 @@ export function ChatPanel() {
   const {
     isChatOpen,
     setChatOpen,
-    setCurrentView,
     chatMessages,
     chatSessions,
     activeChatSession,
@@ -253,58 +252,6 @@ export function ChatPanel() {
               </div>
             </div>
 
-            <div className="mt-3 flex items-center gap-2">
-              <div className="relative min-w-0" ref={modelPickerRef}>
-                <button
-                  onClick={() => {
-                    setShowHistoryPicker(false);
-                    setShowModelPicker((open) => !open);
-                  }}
-                  className="inline-flex max-w-[220px] min-w-0 items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100"
-                >
-                  <Sparkles className="h-3.5 w-3.5 shrink-0 text-blue-500" />
-                  <span className="truncate">{selectedModel || formatProviderLabel(selectedProvider)}</span>
-                  <ChevronDown className="h-3.5 w-3.5 shrink-0" />
-                </button>
-
-                {showModelPicker && (
-                  <div className="absolute left-0 top-full z-20 mt-2 max-h-56 w-max min-w-full overflow-y-auto rounded-xl border border-gray-200 bg-white p-1 shadow-lg">
-                    {modelsLoading ? (
-                      <div className="flex items-center gap-2 px-3 py-2 text-xs text-gray-500">
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        Loading models...
-                      </div>
-                    ) : models.length === 0 ? (
-                      <div className="px-3 py-2 text-xs text-gray-500">
-                        No models reported by the active provider.
-                      </div>
-                    ) : (
-                      models.map((model) => (
-                        <button
-                          key={model.id}
-                          onClick={() => {
-                            setSelectedModel(model.id);
-                            setShowModelPicker(false);
-                          }}
-                          className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm ${selectedModel === model.id ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-50'}`}
-                        >
-                          <span className="truncate">{model.display_name || model.id}</span>
-                          {selectedModel === model.id && <Checkmark />}
-                        </button>
-                      ))
-                    )}
-                  </div>
-                )}
-              </div>
-
-              <button
-                onClick={() => setCurrentView('settings')}
-                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-gray-200 text-gray-600 hover:bg-gray-50"
-                aria-label="Open settings"
-              >
-                <Settings className="h-4 w-4" />
-              </button>
-            </div>
           </div>
 
           <div className="relative flex shrink-0 items-center gap-1" ref={historyPickerRef}>
@@ -418,26 +365,72 @@ export function ChatPanel() {
       </div>
 
       <div className="border-t p-4">
-        <form onSubmit={handleSubmit} className="relative flex items-end">
-          <TextareaAutosize
-            ref={inputRef}
-            minRows={1}
-            maxRows={6}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Ask anything, @ to mention, / for workflows"
-            className="w-full resize-none rounded-2xl border border-gray-300 bg-gray-50 px-4 py-3 pr-12 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            style={{ fontSize: `${chatFontSize}px` }}
-          />
-          <button
-            type="submit"
-            disabled={!input.trim() || isCurrentSessionLoading}
-            className="absolute bottom-1.5 right-1.5 flex h-9 w-9 items-center justify-center rounded-full bg-blue-600 text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-          >
-            <Send className="h-4 w-4" />
-          </button>
-        </form>
+        <div className="flex items-end gap-2">
+          <form onSubmit={handleSubmit} className="relative flex-1">
+            <TextareaAutosize
+              ref={inputRef}
+              minRows={1}
+              maxRows={6}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Ask anything, @ to mention, / for workflows"
+              className="w-full resize-none rounded-2xl border border-gray-300 bg-gray-50 px-4 py-3 pr-12 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              style={{ fontSize: `${chatFontSize}px` }}
+            />
+            <button
+              type="submit"
+              disabled={!input.trim() || isCurrentSessionLoading}
+              className="absolute bottom-1.5 right-1.5 flex h-9 w-9 items-center justify-center rounded-full bg-blue-600 text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+            >
+              <Send className="h-4 w-4" />
+            </button>
+          </form>
+
+          <div className="relative shrink-0" ref={modelPickerRef}>
+            <button
+              onClick={() => {
+                setShowHistoryPicker(false);
+                setShowModelPicker((open) => !open);
+              }}
+              className="inline-flex h-11 max-w-[140px] min-w-0 items-center gap-1.5 rounded-2xl border border-gray-200 bg-gray-50 px-3 text-xs font-medium text-gray-700 hover:bg-gray-100"
+              title={selectedModel || formatProviderLabel(selectedProvider)}
+            >
+              <Sparkles className="h-3.5 w-3.5 shrink-0 text-blue-500" />
+              <span className="truncate">{selectedModel || formatProviderLabel(selectedProvider)}</span>
+              <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+            </button>
+
+            {showModelPicker && (
+              <div className="absolute bottom-full right-0 z-20 mb-2 max-h-56 w-60 overflow-y-auto rounded-xl border border-gray-200 bg-white p-1 shadow-lg">
+                {modelsLoading ? (
+                  <div className="flex items-center gap-2 px-3 py-2 text-xs text-gray-500">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Loading models...
+                  </div>
+                ) : models.length === 0 ? (
+                  <div className="px-3 py-2 text-xs text-gray-500">
+                    No models reported by the active provider.
+                  </div>
+                ) : (
+                  models.map((model) => (
+                    <button
+                      key={model.id}
+                      onClick={() => {
+                        setSelectedModel(model.id);
+                        setShowModelPicker(false);
+                      }}
+                      className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm ${selectedModel === model.id ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-50'}`}
+                    >
+                      <span className="truncate">{model.display_name || model.id}</span>
+                      {selectedModel === model.id && <Checkmark />}
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
