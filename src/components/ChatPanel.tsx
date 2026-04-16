@@ -241,17 +241,16 @@ export function ChatPanel() {
 
   return (
     <div className="flex h-full w-full flex-col border-l bg-white shadow-xl">
-      <div className="border-b px-4 py-3">
+      <div className="border-b px-3 py-2.5">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-2">
-              <Bot className="h-5 w-5 shrink-0 text-blue-600" />
+              <Bot className="h-4.5 w-4.5 shrink-0 text-blue-600" />
               <div className="min-w-0">
-                <h2 className="truncate text-base font-semibold text-gray-900">Agent</h2>
-                <p className="truncate text-xs text-gray-500">{activeChatSession?.title ?? '새 대화'}</p>
+                <h2 className="truncate text-sm font-semibold text-gray-900">Agent</h2>
+                <p className="truncate text-[11px] text-gray-500">{activeChatSession?.title ?? '새 대화'}</p>
               </div>
             </div>
-
           </div>
 
           <div className="relative flex shrink-0 items-center gap-1" ref={historyPickerRef}>
@@ -318,7 +317,7 @@ export function ChatPanel() {
         </div>
       </div>
 
-      <div className="flex-1 space-y-4 overflow-y-auto p-4">
+      <div className="flex-1 space-y-4 overflow-y-auto p-3.5">
         {chatMessages.map((msg) => (
           <div
             key={msg.id}
@@ -364,7 +363,7 @@ export function ChatPanel() {
         <div ref={messagesEndRef} />
       </div>
 
-      <div className="border-t p-4">
+      <div className="border-t p-3">
         <div className="flex items-end gap-2">
           <form onSubmit={handleSubmit} className="relative flex-1">
             <TextareaAutosize
@@ -375,13 +374,13 @@ export function ChatPanel() {
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Ask anything, @ to mention, / for workflows"
-              className="w-full resize-none rounded-2xl border border-gray-300 bg-gray-50 px-4 py-3 pr-12 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="min-h-10 w-full resize-none rounded-xl border border-gray-300 bg-gray-50 px-4 py-2.5 pr-12 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               style={{ fontSize: `${chatFontSize}px` }}
             />
             <button
               type="submit"
               disabled={!input.trim() || isCurrentSessionLoading}
-              className="absolute bottom-1.5 right-1.5 flex h-9 w-9 items-center justify-center rounded-full bg-blue-600 text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+              className="absolute bottom-1 right-1 flex h-8.5 w-8.5 items-center justify-center rounded-full bg-blue-600 text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
             >
               <Send className="h-4 w-4" />
             </button>
@@ -393,7 +392,7 @@ export function ChatPanel() {
                 setShowHistoryPicker(false);
                 setShowModelPicker((open) => !open);
               }}
-              className="inline-flex h-11 max-w-[140px] min-w-0 items-center gap-1.5 rounded-2xl border border-gray-200 bg-gray-50 px-3 text-xs font-medium text-gray-700 hover:bg-gray-100"
+              className="inline-flex h-10 max-w-[120px] min-w-0 items-center gap-1.5 rounded-xl border border-gray-200 bg-gray-50 px-2.5 text-xs font-medium text-gray-700 hover:bg-gray-100"
               title={selectedModel || formatProviderLabel(selectedProvider)}
             >
               <Sparkles className="h-3.5 w-3.5 shrink-0 text-blue-500" />
@@ -458,7 +457,7 @@ function IconButton({
   return (
     <button
       onClick={onClick}
-      className={`inline-flex h-9 w-9 items-center justify-center rounded-md border transition-colors ${active ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-transparent text-gray-500 hover:bg-gray-100 hover:text-gray-700'}`}
+      className={`inline-flex h-8 w-8 items-center justify-center rounded-md border transition-colors ${active ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-transparent text-gray-500 hover:bg-gray-100 hover:text-gray-700'}`}
       aria-label={label}
       title={label}
     >
