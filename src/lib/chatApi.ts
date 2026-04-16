@@ -1,4 +1,4 @@
-import type { AIProvider, ModelOption } from '../types/ai';
+import type { AIProvider, CodexReasoningEffort, ModelOption } from '../types/ai';
 
 export type ChatRole = 'user' | 'assistant';
 
@@ -33,6 +33,8 @@ export interface ChatCompletionRequest {
   images?: ChatImageAttachment[];
   provider?: AIProvider;
   model?: string;
+  reasoningEffort?: CodexReasoningEffort;
+  useFastModel?: boolean;
   documentContext?: ChatDocumentContext;
 }
 

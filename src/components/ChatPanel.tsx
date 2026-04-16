@@ -11,15 +11,19 @@ import { PdfContextResolutionError, resolvePdfDocumentContext } from '../lib/pdf
 import { normalizeAssistantMarkdown } from '../lib/math/normalizeAssistantMarkdown';
 import {
   AI_PROVIDER_EVENT,
+  CODEX_REASONING_PREFERENCE_EVENT,
   DEFAULT_AI_PROVIDER,
+  USE_FAST_MODEL_EVENT,
   readStoredAIProvider,
+  readStoredCodexReasoningPreference,
+  readStoredUseFastModel,
 } from '../lib/providerPreferences';
 import {
   CHAT_FONT_SIZE_EVENT,
   DEFAULT_CHAT_FONT_SIZE,
   readStoredChatFontSize,
 } from '../lib/chatPreferences';
-import type { AIProvider, ModelOption } from '../types/ai';
+import type { AIProvider, CodexReasoningPreference, ModelOption } from '../types/ai';
 
 function formatProviderLabel(provider: AIProvider) {
   return provider === 'claude' ? 'Claude Code' : 'Codex';
@@ -59,6 +63,8 @@ export function ChatPanel() {
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [showHistoryPicker, setShowHistoryPicker] = useState(false);
   const [chatFontSize, setChatFontSize] = useState(DEFAULT_CHAT_FONT_SIZE);
+  const [reasoningPreference, setReasoningPreference] = useState<CodexReasoningPreference>(readStoredCodexReasoningPreference());
+  const [useFastModel, setUseFastModel] = useState(readStoredUseFastModel());
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const modelPickerRef = useRef<HTMLDivElement>(null);
   const historyPickerRef = useRef<HTMLDivElement>(null);
@@ -69,6 +75,10 @@ export function ChatPanel() {
   const historySessions = useMemo(
     () => [...chatSessions].sort((left, right) => right.updatedAt - left.updatedAt),
     [chatSessions],
+  );
+  const activeModel = useMemo(
+    () => models.find((model) => model.id === selectedModel),
+    [models, selectedModel],
   );
 
   const scrollToBottom = () => {
@@ -101,19 +111,31 @@ export function ChatPanel() {
       setChatFontSize(readStoredChatFontSize());
     };
 
+    const syncAiBehavior = () => {
+      setReasoningPreference(readStoredCodexReasoningPreference());
+      setUseFastModel(readStoredUseFastModel());
+    };
+
     syncProvider();
     syncFontSize();
+    syncAiBehavior();
 
     window.addEventListener('storage', syncProvider);
     window.addEventListener('storage', syncFontSize);
+    window.addEventListener('storage', syncAiBehavior);
     window.addEventListener(AI_PROVIDER_EVENT, syncProvider);
     window.addEventListener(CHAT_FONT_SIZE_EVENT, syncFontSize);
+    window.addEventListener(CODEX_REASONING_PREFERENCE_EVENT, syncAiBehavior);
+    window.addEventListener(USE_FAST_MODEL_EVENT, syncAiBehavior);
 
     return () => {
       window.removeEventListener('storage', syncProvider);
       window.removeEventListener('storage', syncFontSize);
+      window.removeEventListener('storage', syncAiBehavior);
       window.removeEventListener(AI_PROVIDER_EVENT, syncProvider);
       window.removeEventListener(CHAT_FONT_SIZE_EVENT, syncFontSize);
+      window.removeEventListener(CODEX_REASONING_PREFERENCE_EVENT, syncAiBehavior);
+      window.removeEventListener(USE_FAST_MODEL_EVENT, syncAiBehavior);
     };
   }, []);
 
@@ -181,6 +203,14 @@ export function ChatPanel() {
         input: userText,
         provider: selectedProvider || DEFAULT_AI_PROVIDER,
         model: selectedModel || undefined,
+        reasoningEffort:
+          selectedProvider === 'codex' && reasoningPreference !== 'default'
+            ? reasoningPreference
+            : undefined,
+        useFastModel:
+          selectedProvider === 'codex' && useFastModel && activeModel?.supports_fast
+            ? true
+            : undefined,
         documentContext: resolvedPdfContext?.documentContext,
         images: resolvedPdfContext?.images,
         messages: session.messages

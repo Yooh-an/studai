@@ -16,7 +16,7 @@ import {
 interface ProviderRuntime {
   listModels: () => Promise<ModelOption[]>;
   getStatus: () => Promise<ProviderStatusResponse>;
-  validateConnection: (model?: string) => Promise<ProviderValidationResponse>;
+  validateConnection: (model?: string, reasoningEffort?: ChatCompletionRequest['reasoningEffort'], useFastModel?: boolean) => Promise<ProviderValidationResponse>;
   runTurn: (request: ChatCompletionRequest) => Promise<ChatCompletionResponse>;
 }
 
@@ -27,11 +27,19 @@ const codexRuntime: ProviderRuntime = {
   async getStatus() {
     return await getCodexLoginStatus();
   },
-  async validateConnection(model?: string) {
-    return await validateCodexConnection(model);
+  async validateConnection(model?: string, reasoningEffort?: ChatCompletionRequest['reasoningEffort'], useFastModel?: boolean) {
+    return await validateCodexConnection(model, reasoningEffort, useFastModel);
   },
   async runTurn(request: ChatCompletionRequest) {
-    return await runCodexTurn(request.input, request.messages, request.model, request.documentContext, request.images);
+    return await runCodexTurn(
+      request.input,
+      request.messages,
+      request.model,
+      request.documentContext,
+      request.images,
+      request.reasoningEffort,
+      request.useFastModel,
+    );
   },
 };
 

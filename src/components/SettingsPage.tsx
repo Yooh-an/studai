@@ -1,7 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, CheckCircle2, Loader2, Palette, RefreshCw, Server } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Loader2, Palette, RefreshCw, Server, SlidersHorizontal } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
-import { DEFAULT_AI_PROVIDER, readStoredAIProvider, writeStoredAIProvider } from '../lib/providerPreferences';
+import {
+  DEFAULT_AI_PROVIDER,
+  DEFAULT_CODEX_REASONING_PREFERENCE,
+  DEFAULT_USE_FAST_MODEL,
+  readStoredAIProvider,
+  readStoredCodexReasoningPreference,
+  readStoredUseFastModel,
+  writeStoredAIProvider,
+  writeStoredCodexReasoningPreference,
+  writeStoredUseFastModel,
+} from '../lib/providerPreferences';
 import {
   DEFAULT_CHAT_FONT_SIZE,
   MAX_CHAT_FONT_SIZE,
@@ -10,7 +20,7 @@ import {
   writeStoredChatFontSize,
 } from '../lib/chatPreferences';
 import { fetchProviderStatus, validateProvider } from '../lib/aiClient';
-import type { AIProvider } from '../types/ai';
+import type { AIProvider, CodexReasoningPreference } from '../types/ai';
 
 interface ProviderStatus {
   provider: AIProvider;
@@ -26,6 +36,14 @@ interface ValidationResult {
   model?: string;
 }
 
+const REASONING_OPTIONS: Array<{ value: CodexReasoningPreference; label: string; description: string }> = [
+  { value: 'default', label: 'Model default', description: 'Keep the selected model\'s built-in reasoning level.' },
+  { value: 'low', label: 'Low', description: 'Prefer faster responses with lighter reasoning.' },
+  { value: 'medium', label: 'Medium', description: 'Balanced reasoning depth for everyday use.' },
+  { value: 'high', label: 'High', description: 'More deliberate reasoning for harder questions.' },
+  { value: 'xhigh', label: 'Extra high', description: 'Maximize reasoning depth when latency matters less.' },
+];
+
 export function SettingsPage() {
   const { setCurrentView } = useAppContext();
   const [savedProvider, setSavedProvider] = useState<AIProvider>(DEFAULT_AI_PROVIDER);
@@ -35,12 +53,16 @@ export function SettingsPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
   const [chatFontSize, setChatFontSize] = useState(DEFAULT_CHAT_FONT_SIZE);
+  const [reasoningPreference, setReasoningPreference] = useState<CodexReasoningPreference>(DEFAULT_CODEX_REASONING_PREFERENCE);
+  const [useFastModel, setUseFastModel] = useState(DEFAULT_USE_FAST_MODEL);
 
   useEffect(() => {
     const storedProvider = readStoredAIProvider();
     setSavedProvider(storedProvider);
     setCandidateProvider(storedProvider);
     setChatFontSize(readStoredChatFontSize());
+    setReasoningPreference(readStoredCodexReasoningPreference());
+    setUseFastModel(readStoredUseFastModel());
   }, []);
 
   useEffect(() => {
@@ -102,6 +124,14 @@ export function SettingsPage() {
     setChatFontSize(next);
   };
 
+  const handleReasoningPreferenceChange = (value: CodexReasoningPreference) => {
+    setReasoningPreference(writeStoredCodexReasoningPreference(value));
+  };
+
+  const handleUseFastModelChange = (value: boolean) => {
+    setUseFastModel(writeStoredUseFastModel(value));
+  };
+
   return (
     <div className="h-full overflow-y-auto bg-gray-50">
       <div className="mx-auto max-w-3xl px-6 py-8">
@@ -159,7 +189,6 @@ export function SettingsPage() {
                 Refresh status
               </button>
             </div>
-
 
             <div className="rounded-xl bg-gray-50 px-4 py-4">
               {providerStatus === null ? (
@@ -230,6 +259,50 @@ export function SettingsPage() {
                 )}
               </div>
             )}
+          </div>
+        </section>
+
+        <section className="mb-10">
+          <div className="mb-5 flex items-center gap-2">
+            <SlidersHorizontal size={16} strokeWidth={2} className="text-gray-500" />
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-900">AI Behavior</h2>
+          </div>
+
+          <div className="space-y-6 rounded-xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
+            <div>
+              <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-500">
+                Default reasoning effort
+              </label>
+              <select
+                value={reasoningPreference}
+                onChange={(event) => handleReasoningPreferenceChange(event.target.value as CodexReasoningPreference)}
+                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-blue-500"
+              >
+                {REASONING_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+              <p className="mt-2 text-xs text-gray-500">
+                {REASONING_OPTIONS.find((option) => option.value === reasoningPreference)?.description}
+              </p>
+            </div>
+
+            <div className="rounded-xl bg-gray-50 px-4 py-4">
+              <label className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={useFastModel}
+                  onChange={(event) => handleUseFastModelChange(event.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span>
+                  <span className="block text-sm font-medium text-gray-900">Use fast speed tier when available</span>
+                  <span className="mt-1 block text-xs text-gray-500">
+                    Applies only when the active Codex model advertises a `fast` tier, such as `gpt-5.4`.
+                  </span>
+                </span>
+              </label>
+            </div>
           </div>
         </section>
 

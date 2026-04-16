@@ -3,7 +3,7 @@ import { promises as fs } from 'fs';
 import os from 'os';
 import path from 'path';
 
-import type { ModelOption } from '../../types/ai';
+import type { CodexReasoningEffort, ModelOption } from '../../types/ai';
 import type {
   ChatApiMessage,
   ChatCompletionRequest,
@@ -17,6 +17,10 @@ import { buildCodexPrompt } from './codexPrompt';
 
 const CODEX_HOME = process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
 const MODELS_CACHE_FILE = path.join(CODEX_HOME, 'models_cache.json');
+const HIDDEN_CODEX_MODEL_SLUGS = new Set([
+  'gpt-5.2',
+  'gpt-5.3-codex-spark',
+]);
 
 type SupportedProvider = 'codex' | 'claude';
 
@@ -25,11 +29,16 @@ interface ModelRecord {
   display_name?: string;
   visibility?: string;
   priority?: number;
+  default_reasoning_level?: string;
+  supported_reasoning_levels?: Array<{ effort?: string }>;
+  additional_speed_tiers?: string[];
 }
 
 interface ModelsCache {
   models?: ModelRecord[];
 }
+
+const SUPPORTED_REASONING_EFFORTS = new Set<CodexReasoningEffort>(['low', 'medium', 'high', 'xhigh']);
 
 interface ResolvedCommand {
   command: string;
@@ -132,13 +141,30 @@ export async function fetchCodexModels(): Promise<ModelOption[]> {
 
     return (parsed.models || [])
       .filter((model) => model.visibility !== 'hide')
+      .filter((model) => !HIDDEN_CODEX_MODEL_SLUGS.has(model.slug))
       .sort((a, b) => (a.priority ?? Number.MAX_SAFE_INTEGER) - (b.priority ?? Number.MAX_SAFE_INTEGER))
-      .map((model) => ({
-        id: model.slug,
-        display_name: model.display_name || model.slug,
-        owned_by: 'codex',
-        created: 0,
-      }));
+      .map((model) => {
+        const supportedReasoningLevels = (model.supported_reasoning_levels || [])
+          .map((entry) => entry.effort)
+          .filter((effort): effort is CodexReasoningEffort => !!effort && SUPPORTED_REASONING_EFFORTS.has(effort as CodexReasoningEffort));
+        const speedTiers = Array.isArray(model.additional_speed_tiers)
+          ? model.additional_speed_tiers.filter((tier): tier is string => typeof tier === 'string' && tier.trim().length > 0)
+          : [];
+
+        return {
+          id: model.slug,
+          display_name: model.display_name || model.slug,
+          owned_by: 'codex',
+          created: 0,
+          default_reasoning_level:
+            typeof model.default_reasoning_level === 'string' && SUPPORTED_REASONING_EFFORTS.has(model.default_reasoning_level as CodexReasoningEffort)
+              ? model.default_reasoning_level as CodexReasoningEffort
+              : undefined,
+          supported_reasoning_levels: supportedReasoningLevels.length > 0 ? supportedReasoningLevels : undefined,
+          speed_tiers: speedTiers.length > 0 ? speedTiers : undefined,
+          supports_fast: speedTiers.includes('fast'),
+        };
+      });
   } catch {
     return [];
   }
@@ -161,13 +187,105 @@ async function writeImageAttachments(images: ChatImageAttachment[]) {
   };
 }
 
-export async function runCodexTurn(
-  input: string,
-  messages: ChatApiMessage[],
+function extractNumberTokens(text: string) {
+  return [...new Set(text.match(/\b\d{1,3}(?:,\d{3})*(?:\.\d+)?\b/g) || [])];
+}
+
+function normalizeNumericToken(value: string) {
+  return value.replace(/,/g, '');
+}
+
+function containsLikelyUnwrappedMath(text: string) {
+  return /\[[^\]\n]*(?:\\[A-Za-z]+|[A-Za-z][A-Za-z0-9]*_[A-Za-z0-9({\\]+|\^|=|\\times|\\in|\\mathbb|\\text|\\mathrm)[^\]\n]*\]/.test(text)
+    || /\\\([^\n]+\\\)|\\\[[\s\S]*?\\\]/.test(text)
+    || /(?:^|\s)(?:\\mathbb|\\mathrm|\\text|\\frac|\\sqrt)\{/.test(text);
+}
+
+function asksForPageSpecificDetails(input: string, documentContext?: ChatDocumentContext) {
+  if (!documentContext || documentContext.kind !== 'pdf') return false;
+
+  return /(?:이|현재|지금)\s*(?:페이지|쪽)|this\s+page|attached\s+page|구체|정확|크기|차원|몇|토큰\s*수|행렬|벡터/i.test(input)
+    || /현재 페이지|보고 있는 페이지/.test(documentContext.focus || '');
+}
+
+export function shouldRewriteAnswerFromDocumentEvidence(params: {
+  input: string;
+  responseText: string;
+  documentContext?: ChatDocumentContext;
+}) {
+  const { input, responseText, documentContext } = params;
+
+  if (containsLikelyUnwrappedMath(responseText)) {
+    return true;
+  }
+
+  if (!documentContext || documentContext.kind !== 'pdf') return false;
+
+  if (!asksForPageSpecificDetails(input, documentContext)) {
+    return false;
+  }
+
+  const evidenceText = documentContext.pages.map((page) => page.text).join('\n');
+  const evidenceNumbers = extractNumberTokens(evidenceText).map(normalizeNumericToken);
+  if (evidenceNumbers.length === 0) {
+    return false;
+  }
+
+  const responseNumbers = extractNumberTokens(responseText).map(normalizeNumericToken);
+  if (responseNumbers.length === 0) {
+    return /(구체|정확|크기|차원|토큰\s*수|몇)/i.test(input);
+  }
+
+  const evidenceSet = new Set(evidenceNumbers);
+  const overlapCount = responseNumbers.filter((value) => evidenceSet.has(value)).length;
+
+  return overlapCount === 0;
+}
+
+function buildGroundedRewritePrompt(params: {
+  input: string;
+  responseText: string;
+  documentContext?: ChatDocumentContext;
+}) {
+  const { input, responseText, documentContext } = params;
+
+  return [
+    documentContext
+      ? 'Rewrite the assistant answer so it is grounded in the supplied document evidence.'
+      : 'Rewrite the assistant answer so that all math formatting uses standard Markdown math delimiters.',
+    'Keep the answer concise, helpful, and in the same language as the original answer.',
+    documentContext
+      ? 'Use the exact concrete values, identifiers, and terminology from the document evidence when they are available.'
+      : 'Preserve the original meaning and wording as much as possible.',
+    documentContext
+      ? 'Do not invent generic textbook examples when the evidence already provides concrete values.'
+      : 'Only fix math formatting and obvious notation issues.',
+    'Format every math expression with standard Markdown math delimiters: `$...$` for inline math and `$$...$$` for display math.',
+    'Never use `\\(...\\)`, `\\[...\\]`, or `[ ... ]` as math delimiters in the final answer.',
+    'If the original answer is already correct, only fix formatting and grounding issues.',
+    '',
+    'User request:',
+    input,
+    '',
+    ...(documentContext
+      ? [
+          'Document evidence:',
+          documentContext.pages.map((page) => `Page ${page.pageNumber}: ${page.text}`).join('\n\n'),
+          '',
+        ]
+      : []),
+    'Original assistant answer:',
+    responseText,
+  ].join('\n');
+}
+
+async function executeCodexPrompt(
+  prompt: string,
   model?: string,
-  documentContext?: ChatDocumentContext,
   images?: ChatImageAttachment[],
-): Promise<ChatCompletionResponse> {
+  reasoningEffort?: CodexReasoningEffort,
+  useFastModel?: boolean,
+) {
   const executable = await resolveCodexExecutable();
   const args = [
     ...executable.argsPrefix,
@@ -184,6 +302,14 @@ export async function runCodexTurn(
     args.push('--model', model);
   }
 
+  if (reasoningEffort) {
+    args.push('-c', `reasoning_level=${JSON.stringify(reasoningEffort)}`);
+  }
+
+  if (useFastModel) {
+    args.push('-c', 'model_speed_tier="fast"');
+  }
+
   let imageTempDir: string | undefined;
 
   try {
@@ -195,9 +321,9 @@ export async function runCodexTurn(
       }
     }
 
-    args.push('--', buildCodexPrompt({ input, messages, documentContext, images }));
+    args.push('--', prompt);
 
-    const result = await new Promise<{ text: string; model?: string }>((resolve, reject) => {
+    return await new Promise<{ text: string; model?: string }>((resolve, reject) => {
       const child = spawn(executable.command, args, {
         env: process.env,
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -254,12 +380,6 @@ export async function runCodexTurn(
         resolve({ text: finalText, model });
       });
     });
-
-    return {
-      provider: 'codex',
-      model: result.model,
-      text: result.text,
-    };
   } finally {
     if (imageTempDir) {
       await fs.rm(imageTempDir, { recursive: true, force: true }).catch(() => {});
@@ -267,11 +387,48 @@ export async function runCodexTurn(
   }
 }
 
-export async function validateCodexConnection(model?: string): Promise<ProviderValidationResponse> {
+export async function runCodexTurn(
+  input: string,
+  messages: ChatApiMessage[],
+  model?: string,
+  documentContext?: ChatDocumentContext,
+  images?: ChatImageAttachment[],
+  reasoningEffort?: CodexReasoningEffort,
+  useFastModel?: boolean,
+): Promise<ChatCompletionResponse> {
+  const prompt = buildCodexPrompt({ input, messages, documentContext, images });
+  let result = await executeCodexPrompt(prompt, model, images, reasoningEffort, useFastModel);
+
+  if (shouldRewriteAnswerFromDocumentEvidence({ input, responseText: result.text, documentContext })) {
+    const rewritePrompt = buildGroundedRewritePrompt({
+      input,
+      responseText: result.text,
+      documentContext,
+    });
+
+    result = await executeCodexPrompt(rewritePrompt, model, images, reasoningEffort, useFastModel);
+  }
+
+  return {
+    provider: 'codex',
+    model: result.model,
+    text: result.text,
+  };
+}
+
+export async function validateCodexConnection(
+  model?: string,
+  reasoningEffort?: CodexReasoningEffort,
+  useFastModel?: boolean,
+): Promise<ProviderValidationResponse> {
   const result = await runCodexTurn(
     'Reply with exactly OK.',
     [{ role: 'user', content: 'Reply with exactly OK.' }],
     model,
+    undefined,
+    undefined,
+    reasoningEffort,
+    useFastModel,
   );
 
   return {
@@ -319,6 +476,14 @@ function normalizeImages(value: unknown): ChatImageAttachment[] | undefined {
     }));
 
   return images.length > 0 ? images : undefined;
+}
+
+function normalizeReasoningEffort(value: unknown): CodexReasoningEffort | undefined {
+  if (typeof value === 'string' && SUPPORTED_REASONING_EFFORTS.has(value as CodexReasoningEffort)) {
+    return value as CodexReasoningEffort;
+  }
+
+  return undefined;
 }
 
 function normalizeDocumentContext(value: unknown): ChatDocumentContext | undefined {
@@ -374,6 +539,8 @@ export function parseChatRequestBody(body: unknown): ChatCompletionRequest {
     images: normalizeImages(payload.images),
     provider: normalizeProvider(payload.provider),
     model: typeof payload.model === 'string' && payload.model.trim() ? payload.model : undefined,
+    reasoningEffort: normalizeReasoningEffort(payload.reasoningEffort),
+    useFastModel: payload.useFastModel === true,
     documentContext: normalizeDocumentContext(payload.documentContext),
   };
 }
