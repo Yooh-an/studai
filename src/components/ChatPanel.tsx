@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { Send, Bot, User, Loader2, ChevronDown } from 'lucide-react';
+import { X, Send, Bot, User, Loader2, ChevronDown, Plus, History } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import TextareaAutosize from 'react-textarea-autosize';
@@ -244,19 +244,24 @@ export function ChatPanel() {
       <div className="border-b px-3 py-2">
         <div className="flex items-center justify-end">
           <div className="relative flex shrink-0 items-center gap-1" ref={historyPickerRef}>
-            <HeaderTextButton onClick={handleCreateNewChat}>새 대화</HeaderTextButton>
+            <IconButton onClick={handleCreateNewChat} label="새 대화">
+              <Plus className="h-4.5 w-4.5" />
+            </IconButton>
 
-            <HeaderTextButton
+            <IconButton
               onClick={() => {
                 setShowModelPicker(false);
                 setShowHistoryPicker((open) => !open);
               }}
+              label="대화 기록"
               active={showHistoryPicker}
             >
-              기록
-            </HeaderTextButton>
+              <History className="h-4.5 w-4.5" />
+            </IconButton>
 
-            <HeaderTextButton onClick={() => setChatOpen(false)}>닫기</HeaderTextButton>
+            <IconButton onClick={() => setChatOpen(false)} label="Close chat">
+              <X className="h-4.5 w-4.5" />
+            </IconButton>
 
             {showHistoryPicker && (
               <div className="absolute right-0 top-full z-20 mt-2 w-72 rounded-2xl border border-gray-200 bg-white p-2 shadow-xl">
@@ -427,19 +432,23 @@ function Checkmark() {
   );
 }
 
-function HeaderTextButton({
+function IconButton({
   children,
+  label,
   onClick,
   active = false,
 }: {
   children: React.ReactNode;
+  label: string;
   onClick: () => void;
   active?: boolean;
 }) {
   return (
     <button
       onClick={onClick}
-      className={`rounded-md px-2 py-1 text-xs transition-colors ${active ? 'bg-blue-50 text-blue-700' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'}`}
+      className={`inline-flex h-8 w-8 items-center justify-center rounded-md border transition-colors ${active ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-transparent text-gray-500 hover:bg-gray-100 hover:text-gray-700'}`}
+      aria-label={label}
+      title={label}
     >
       {children}
     </button>
