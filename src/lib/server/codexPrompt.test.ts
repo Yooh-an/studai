@@ -83,3 +83,15 @@ test('buildCodexPrompt keeps conversation history in a dedicated section', () =>
   assert.match(prompt, /Assistant: 첫 답변/);
   assert.match(prompt, /END CONVERSATION HISTORY/);
 });
+
+test('buildCodexPrompt enforces standard markdown math delimiters', () => {
+  const prompt = buildCodexPrompt({
+    input: '수식을 포함해 설명해줘',
+    messages: [],
+  });
+
+  assert.match(prompt, /When writing math, always use standard Markdown math delimiters:/);
+  assert.match(prompt, /`\$\.\.\.\$` for inline math and `\$\$\.\.\.\$\$` for display math\./);
+  assert.match(prompt, /Never wrap math in `\[ \.\.\. \]`, and never use `\\\(\.\.\.\\\)` or `\\\[\.\.\.\\\]` delimiters\./);
+  assert.match(prompt, /If you use LaTeX environments such as `bmatrix`, `pmatrix`, `aligned`, or `cases`, place them inside `\$\$\.\.\.\$\$`\./);
+});

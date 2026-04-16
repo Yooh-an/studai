@@ -8,7 +8,6 @@ import rehypeKatex from 'rehype-katex';
 import TextareaAutosize from 'react-textarea-autosize';
 import { fetchChatModels, requestChatReply } from '../lib/aiClient';
 import { PdfContextResolutionError, resolvePdfDocumentContext } from '../lib/pdfQueryPlanner';
-import { normalizeAssistantMarkdown } from '../lib/math/normalizeAssistantMarkdown';
 import {
   AI_PROVIDER_EVENT,
   CODEX_REASONING_PREFERENCE_EVENT,
@@ -370,9 +369,7 @@ export function ChatPanel() {
               {msg.role === 'user' ? (
                 <p className="whitespace-pre-wrap">{msg.content}</p>
               ) : (
-                <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
-                  {normalizeAssistantMarkdown(msg.content)}
-                </ReactMarkdown>
+                <AssistantMarkdown content={msg.content} />
               )}
             </div>
           </div>
@@ -457,6 +454,63 @@ export function ChatPanel() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function AssistantMarkdown({ content }: { content: string }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const displayBlocks = Array.from(container.querySelectorAll<HTMLElement>('.katex-display'));
+    if (displayBlocks.length === 0) return;
+
+    const updateScrollState = (element: HTMLElement) => {
+      const hasOverflow = element.scrollWidth - element.clientWidth > 1;
+      const hasLeftOverflow = element.scrollLeft > 1;
+      const hasRightOverflow = element.scrollLeft + element.clientWidth < element.scrollWidth - 1;
+
+      element.dataset.overflow = hasOverflow ? 'true' : 'false';
+      element.dataset.leftOverflow = hasLeftOverflow ? 'true' : 'false';
+      element.dataset.rightOverflow = hasRightOverflow ? 'true' : 'false';
+    };
+
+    const updateAll = () => {
+      displayBlocks.forEach(updateScrollState);
+    };
+
+    const cleanupCallbacks: Array<() => void> = [];
+
+    displayBlocks.forEach((element) => {
+      const handleScroll = () => updateScrollState(element);
+      element.addEventListener('scroll', handleScroll, { passive: true });
+      cleanupCallbacks.push(() => element.removeEventListener('scroll', handleScroll));
+    });
+
+    const resizeObserver = new ResizeObserver(() => {
+      updateAll();
+    });
+
+    resizeObserver.observe(container);
+    displayBlocks.forEach((element) => resizeObserver.observe(element));
+    cleanupCallbacks.push(() => resizeObserver.disconnect());
+
+    const frame = requestAnimationFrame(updateAll);
+    cleanupCallbacks.push(() => cancelAnimationFrame(frame));
+
+    return () => {
+      cleanupCallbacks.forEach((callback) => callback());
+    };
+  }, [content]);
+
+  return (
+    <div ref={containerRef}>
+      <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
+        {content}
+      </ReactMarkdown>
     </div>
   );
 }

@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
+@import "katex/dist/katex.min.css";
 
 .react-pdf__Page__textContent {
   user-select: text !important;
@@ -21,4 +22,46 @@
   display: block;
   max-width: 100%;
   overflow-x: auto;
+}
+
+.chat-markdown :where(.katex, .katex *) {
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.chat-markdown :where(.katex-display) {
+  position: relative;
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.125rem 0 1.1rem;
+  scrollbar-gutter: stable both-edges;
+  -webkit-overflow-scrolling: touch;
+}
+
+.chat-markdown :where(.katex-display[data-overflow='true']) {
+  cursor: ew-resize;
+}
+
+.chat-markdown :where(.katex-display[data-overflow='true'])::after {
+  content: '↔ 좌우 스크롤';
+  position: sticky;
+  right: 0.35rem;
+  bottom: 0.1rem;
+  float: right;
+  border-radius: 9999px;
+  background: rgba(243, 244, 246, 0.96);
+  padding: 0.1rem 0.45rem;
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: rgb(107, 114, 128);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+  pointer-events: none;
+}
+
+.chat-markdown :where(.katex-display > .katex) {
+  display: inline-block;
+  min-width: max-content;
 }
