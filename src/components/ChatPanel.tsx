@@ -242,7 +242,11 @@ export function ChatPanel() {
   return (
     <div className="flex h-full w-full flex-col border-l bg-white shadow-xl">
       <div className="border-b px-3 py-2">
-        <div className="flex items-center justify-end">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <h2 className="truncate text-sm font-semibold text-gray-900">Agent</h2>
+          </div>
+
           <div className="relative flex shrink-0 items-center gap-1" ref={historyPickerRef}>
             <IconButton onClick={handleCreateNewChat} label="새 대화">
               <Plus className="h-4.5 w-4.5" />
