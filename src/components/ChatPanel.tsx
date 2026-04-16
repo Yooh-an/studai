@@ -3,9 +3,12 @@ import { useAppContext } from '../context/AppContext';
 import { X, Send, Bot, User, Loader2, ChevronDown, Plus, History } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import TextareaAutosize from 'react-textarea-autosize';
 import { fetchChatModels, requestChatReply } from '../lib/aiClient';
 import { PdfContextResolutionError, resolvePdfDocumentContext } from '../lib/pdfQueryPlanner';
+import { normalizeAssistantMarkdown } from '../lib/math/normalizeAssistantMarkdown';
 import {
   AI_PROVIDER_EVENT,
   DEFAULT_AI_PROVIDER,
@@ -337,8 +340,8 @@ export function ChatPanel() {
               {msg.role === 'user' ? (
                 <p className="whitespace-pre-wrap">{msg.content}</p>
               ) : (
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {msg.content}
+                <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
+                  {normalizeAssistantMarkdown(msg.content)}
                 </ReactMarkdown>
               )}
             </div>
