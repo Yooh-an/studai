@@ -11,3 +11,7 @@ tsconfig.tsbuildinfo
 *.log
 .env*
 !.env.example
+.demo-gif/
+.demo-video/
+hermes_site_probe/
+test-results/
