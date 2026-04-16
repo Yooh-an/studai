@@ -84,6 +84,44 @@ test('buildCodexPrompt keeps conversation history in a dedicated section', () =>
   assert.match(prompt, /END CONVERSATION HISTORY/);
 });
 
+test('buildCodexPrompt drops prior assistant replies when fresh document evidence is attached', () => {
+  const prompt = buildCodexPrompt({
+    input: '그림 3-3 설명해줘',
+    messages: [
+      { role: 'user', content: '3-3 그림 설명' },
+      { role: 'assistant', content: '현재 대화에 전달된 것은 103페이지 메타정보뿐입니다.' },
+      { role: 'user', content: '그림 3-3' },
+    ],
+    images: [
+      {
+        data: 'ZmFrZS1pbWFnZQ==',
+        mimeType: 'image/jpeg',
+        label: '103페이지',
+        pageNumber: 103,
+      },
+    ],
+    documentContext: {
+      kind: 'pdf',
+      currentPage: 103,
+      totalPages: 200,
+      focus: '현재 보고 있는 페이지',
+      pages: [
+        {
+          pageNumber: 103,
+          text: '그림 3-3 관련 본문 설명',
+        },
+      ],
+    },
+  });
+
+  assert.match(prompt, /Attached page images \(untrusted evidence\): 103페이지/);
+  assert.match(prompt, /If earlier assistant messages conflict with the latest document evidence/);
+  assert.match(prompt, /Prior user requests for context/);
+  assert.match(prompt, /User: 3-3 그림 설명/);
+  assert.match(prompt, /User: 그림 3-3/);
+  assert.doesNotMatch(prompt, /Assistant: 현재 대화에 전달된 것은 103페이지 메타정보뿐입니다\./);
+});
+
 test('buildCodexPrompt enforces standard markdown math delimiters', () => {
   const prompt = buildCodexPrompt({
     input: '수식을 포함해 설명해줘',

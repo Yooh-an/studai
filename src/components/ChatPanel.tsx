@@ -397,7 +397,7 @@ export function ChatPanel() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Ask anything, @ to mention, / for workflows"
+              placeholder="Ask anything"
               className="min-h-10 w-full resize-none rounded-xl border border-gray-300 bg-gray-50 px-4 py-2.5 pr-12 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               style={{ fontSize: `${chatFontSize}px` }}
             />
