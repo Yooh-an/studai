@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState, ReactNode } from 'react';
-import { getDocumentCacheId, loadCachedChatMessages, saveCachedChatMessages } from '../lib/documentCache';
+import { getDocumentCacheId, loadCachedChatSessions, saveCachedChatSessions } from '../lib/documentCache';
 
 export type FileType = 'pdf' | 'epub' | null;
 export type AppView = 'workspace' | 'settings';
@@ -13,6 +13,14 @@ export interface Message {
   pendingResponse?: boolean;
 }
 
+export interface ChatSession {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  messages: Message[];
+}
+
 interface AppContextType {
   isAuthenticated: boolean;
   login: () => void;
@@ -20,7 +28,7 @@ interface AppContextType {
 
   currentView: AppView;
   setCurrentView: (view: AppView) => void;
-  
+
   currentFile: File | null;
   fileType: FileType;
   setFile: (file: File | null, type: FileType) => void;
@@ -28,27 +36,59 @@ interface AppContextType {
   setCurrentPdfPage: (page: number | null) => void;
   currentPdfNumPages: number | null;
   setCurrentPdfNumPages: (pageCount: number | null) => void;
-  
+
   selectedText: string;
   setSelectedText: (text: string) => void;
-  
+
   popupPosition: { x: number; y: number } | null;
   setPopupPosition: (pos: { x: number; y: number } | null) => void;
   selectionHighlightAction: (() => void) | null;
   setSelectionHighlightAction: (action: (() => void) | null) => void;
-  
+
   chatMessages: Message[];
+  chatSessions: ChatSession[];
+  activeChatSession: ChatSession | null;
+  activeChatSessionId: string | null;
   addMessage: (msg: Message) => void;
-  
+  addMessageToSession: (sessionId: string, msg: Message) => void;
+  createChatSession: () => string;
+  setActiveChatSession: (sessionId: string) => void;
+
   isChatOpen: boolean;
   setChatOpen: (isOpen: boolean) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
+const DEFAULT_CHAT_SESSION_TITLE = '새 대화';
 const DEFAULT_CHAT_MESSAGES: Message[] = [
   { id: 'welcome', role: 'model', content: '안녕하세요! 문서에 대해 무엇이든 물어보세요.' },
 ];
+
+function createChatSessionId() {
+  return `session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function cloneDefaultChatMessages() {
+  return DEFAULT_CHAT_MESSAGES.map((message) => ({ ...message }));
+}
+
+function deriveChatSessionTitle(content: string) {
+  const normalized = content.replace(/\s+/g, ' ').trim();
+  if (!normalized) return DEFAULT_CHAT_SESSION_TITLE;
+  return normalized.length > 32 ? `${normalized.slice(0, 32).trimEnd()}…` : normalized;
+}
+
+function createEmptyChatSession(): ChatSession {
+  const now = Date.now();
+  return {
+    id: createChatSessionId(),
+    title: DEFAULT_CHAT_SESSION_TITLE,
+    createdAt: now,
+    updatedAt: now,
+    messages: cloneDefaultChatMessages(),
+  };
+}
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -60,7 +100,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [selectionHighlightAction, setSelectionHighlightActionState] = useState<(() => void) | null>(null);
   const [currentPdfPage, setCurrentPdfPage] = useState<number | null>(null);
   const [currentPdfNumPages, setCurrentPdfNumPages] = useState<number | null>(null);
-  const [chatMessages, setChatMessages] = useState<Message[]>(DEFAULT_CHAT_MESSAGES);
+  const [chatSessions, setChatSessions] = useState<ChatSession[]>([createEmptyChatSession()]);
+  const [activeChatSessionId, setActiveChatSessionId] = useState<string | null>(null);
   const [hasLoadedCachedChat, setHasLoadedCachedChat] = useState(false);
   const [isChatOpen, setChatOpen] = useState(true);
 
@@ -73,20 +114,42 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setHasLoadedCachedChat(false);
 
     if (!documentCacheId) {
-      setChatMessages(DEFAULT_CHAT_MESSAGES);
+      const initialSession = createEmptyChatSession();
+      setChatSessions([initialSession]);
+      setActiveChatSessionId(initialSession.id);
       setHasLoadedCachedChat(true);
       return;
     }
 
-    const cachedMessages = loadCachedChatMessages(documentCacheId);
-    setChatMessages(cachedMessages.length > 0 ? cachedMessages : DEFAULT_CHAT_MESSAGES);
+    const cachedState = loadCachedChatSessions(documentCacheId);
+    if (cachedState.sessions.length > 0) {
+      const resolvedActiveSessionId = cachedState.activeSessionId && cachedState.sessions.some((session) => session.id === cachedState.activeSessionId)
+        ? cachedState.activeSessionId
+        : cachedState.sessions[0]?.id ?? null;
+
+      setChatSessions(cachedState.sessions);
+      setActiveChatSessionId(resolvedActiveSessionId);
+      setHasLoadedCachedChat(true);
+      return;
+    }
+
+    const initialSession = createEmptyChatSession();
+    setChatSessions([initialSession]);
+    setActiveChatSessionId(initialSession.id);
     setHasLoadedCachedChat(true);
   }, [documentCacheId]);
 
   useEffect(() => {
     if (!documentCacheId || !hasLoadedCachedChat) return;
-    saveCachedChatMessages(documentCacheId, chatMessages);
-  }, [chatMessages, documentCacheId, hasLoadedCachedChat]);
+    saveCachedChatSessions(documentCacheId, chatSessions, activeChatSessionId);
+  }, [chatSessions, documentCacheId, hasLoadedCachedChat, activeChatSessionId]);
+
+  const activeChatSession = useMemo(() => {
+    if (chatSessions.length === 0) return null;
+    return chatSessions.find((session) => session.id === activeChatSessionId) ?? chatSessions[0];
+  }, [activeChatSessionId, chatSessions]);
+
+  const chatMessages = activeChatSession?.messages ?? cloneDefaultChatMessages();
 
   const login = useCallback(() => {
     setIsAuthenticated(true);
@@ -97,7 +160,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setIsAuthenticated(false);
     setCurrentView('workspace');
   }, []);
-  
+
   const setFile = useCallback((file: File | null, type: FileType) => {
     setCurrentFile(file);
     setFileType(type);
@@ -108,8 +171,46 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setCurrentPdfNumPages(null);
   }, []);
 
+  const addMessageToSession = useCallback((sessionId: string, msg: Message) => {
+    const nextMessage: Message = {
+      ...msg,
+      pendingResponse: msg.pendingResponse ?? false,
+    };
+
+    setChatSessions((prevSessions) =>
+      prevSessions.map((session) => {
+        if (session.id !== sessionId) return session;
+
+        const nextMessages = [...session.messages, nextMessage];
+        const nextTitle =
+          session.title === DEFAULT_CHAT_SESSION_TITLE && nextMessage.role === 'user'
+            ? deriveChatSessionTitle(nextMessage.content)
+            : session.title;
+
+        return {
+          ...session,
+          title: nextTitle,
+          updatedAt: Date.now(),
+          messages: nextMessages,
+        };
+      }),
+    );
+  }, []);
+
   const addMessage = useCallback((msg: Message) => {
-    setChatMessages((prev) => [...prev, { ...msg, pendingResponse: msg.pendingResponse ?? false }]);
+    if (!activeChatSessionId) return;
+    addMessageToSession(activeChatSessionId, msg);
+  }, [activeChatSessionId, addMessageToSession]);
+
+  const createChatSession = useCallback(() => {
+    const nextSession = createEmptyChatSession();
+    setChatSessions((prevSessions) => [nextSession, ...prevSessions]);
+    setActiveChatSessionId(nextSession.id);
+    return nextSession.id;
+  }, []);
+
+  const setActiveChatSession = useCallback((sessionId: string) => {
+    setActiveChatSessionId(sessionId);
   }, []);
 
   const setSelectionHighlightAction = useCallback((action: (() => void) | null) => {
@@ -117,16 +218,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const contextValue = useMemo(() => ({
-    isAuthenticated, login, logout,
-    currentView, setCurrentView,
-    currentFile, fileType, setFile,
-    currentPdfPage, setCurrentPdfPage,
-    currentPdfNumPages, setCurrentPdfNumPages,
-    selectedText, setSelectedText,
-    popupPosition, setPopupPosition,
-    selectionHighlightAction, setSelectionHighlightAction,
-    chatMessages, addMessage,
-    isChatOpen, setChatOpen,
+    isAuthenticated,
+    login,
+    logout,
+    currentView,
+    setCurrentView,
+    currentFile,
+    fileType,
+    setFile,
+    currentPdfPage,
+    setCurrentPdfPage,
+    currentPdfNumPages,
+    setCurrentPdfNumPages,
+    selectedText,
+    setSelectedText,
+    popupPosition,
+    setPopupPosition,
+    selectionHighlightAction,
+    setSelectionHighlightAction,
+    chatMessages,
+    chatSessions,
+    activeChatSession,
+    activeChatSessionId,
+    addMessage,
+    addMessageToSession,
+    createChatSession,
+    setActiveChatSession,
+    isChatOpen,
+    setChatOpen,
   }), [
     isAuthenticated,
     login,
@@ -142,7 +261,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     selectionHighlightAction,
     setSelectionHighlightAction,
     chatMessages,
+    chatSessions,
+    activeChatSession,
+    activeChatSessionId,
     addMessage,
+    addMessageToSession,
+    createChatSession,
+    setActiveChatSession,
     isChatOpen,
   ]);
 

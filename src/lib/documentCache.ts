@@ -1,12 +1,18 @@
-import type { Message } from '../context/AppContext';
+import type { ChatSession, Message } from '../context/AppContext';
 import type { AnnotationStroke } from './pdfAnnotations';
 
 const STORAGE_PREFIX = 'studai:cache:v1';
 const CHAT_MESSAGES_KEY = 'chat-messages';
+const CHAT_SESSIONS_KEY = 'chat-sessions';
+const CHAT_ACTIVE_SESSION_KEY = 'chat-active-session';
 const PDF_ANNOTATIONS_KEY = 'pdf-annotations';
 const PDF_LAST_PAGE_KEY = 'pdf-last-page';
 const PDF_SCALE_KEY = 'pdf-scale';
 const EPUB_LAST_LOCATION_KEY = 'epub-last-location';
+const DEFAULT_CHAT_SESSION_TITLE = '새 대화';
+const DEFAULT_CHAT_MESSAGES: Message[] = [
+  { id: 'welcome', role: 'model', content: '안녕하세요! 문서에 대해 무엇이든 물어보세요.' },
+];
 
 function getStorageKey(scope: string, documentId: string) {
   return `${STORAGE_PREFIX}:${scope}:${documentId}`;
@@ -43,6 +49,17 @@ function isMessageRole(role: unknown): role is Message['role'] {
   return role === 'user' || role === 'model';
 }
 
+function cloneDefaultChatMessages() {
+  return DEFAULT_CHAT_MESSAGES.map((message) => ({ ...message }));
+}
+
+function deriveChatSessionTitle(messages: Message[]) {
+  const firstUserMessage = messages.find((message) => message.role === 'user');
+  const normalized = firstUserMessage?.content.replace(/\s+/g, ' ').trim() ?? '';
+  if (!normalized) return DEFAULT_CHAT_SESSION_TITLE;
+  return normalized.length > 32 ? `${normalized.slice(0, 32).trimEnd()}…` : normalized;
+}
+
 function normalizeMessages(messages: unknown): Message[] {
   if (!Array.isArray(messages)) return [];
 
@@ -57,12 +74,101 @@ function normalizeMessages(messages: unknown): Message[] {
     .filter((message) => message.content.trim().length > 0);
 }
 
-export function loadCachedChatMessages(documentId: string): Message[] {
+function normalizeChatSession(value: unknown, index: number): ChatSession | null {
+  if (typeof value !== 'object' || value === null) return null;
+
+  const session = value as Record<string, unknown>;
+  const messages = normalizeMessages(session.messages);
+  const normalizedMessages = messages.length > 0 ? messages : cloneDefaultChatMessages();
+  const createdAt = typeof session.createdAt === 'number' && Number.isFinite(session.createdAt)
+    ? session.createdAt
+    : Date.now();
+  const updatedAt = typeof session.updatedAt === 'number' && Number.isFinite(session.updatedAt)
+    ? session.updatedAt
+    : createdAt;
+  const title = typeof session.title === 'string' && session.title.trim().length > 0
+    ? session.title.trim()
+    : deriveChatSessionTitle(normalizedMessages);
+
+  return {
+    id: typeof session.id === 'string' && session.id.trim().length > 0 ? session.id : `cached-session-${index}`,
+    title,
+    createdAt,
+    updatedAt,
+    messages: normalizedMessages,
+  };
+}
+
+function loadLegacyCachedChatMessages(documentId: string): Message[] {
   return normalizeMessages(readStorage<unknown>(getStorageKey(CHAT_MESSAGES_KEY, documentId), []));
 }
 
+export function loadCachedChatSessions(documentId: string): {
+  sessions: ChatSession[];
+  activeSessionId: string | null;
+} {
+  const cachedSessions = readStorage<unknown>(getStorageKey(CHAT_SESSIONS_KEY, documentId), []);
+  const activeSessionId = readStorage<unknown>(getStorageKey(CHAT_ACTIVE_SESSION_KEY, documentId), null);
+
+  const sessions = Array.isArray(cachedSessions)
+    ? cachedSessions
+        .map((session, index) => normalizeChatSession(session, index))
+        .filter((session): session is ChatSession => session !== null)
+    : [];
+
+  if (sessions.length > 0) {
+    return {
+      sessions,
+      activeSessionId: typeof activeSessionId === 'string' ? activeSessionId : sessions[0].id,
+    };
+  }
+
+  const legacyMessages = loadLegacyCachedChatMessages(documentId);
+  if (legacyMessages.length > 0) {
+    const now = Date.now();
+    const migratedSession: ChatSession = {
+      id: 'migrated-session',
+      title: deriveChatSessionTitle(legacyMessages),
+      createdAt: now,
+      updatedAt: now,
+      messages: legacyMessages,
+    };
+
+    return {
+      sessions: [migratedSession],
+      activeSessionId: migratedSession.id,
+    };
+  }
+
+  return {
+    sessions: [],
+    activeSessionId: null,
+  };
+}
+
+export function saveCachedChatSessions(documentId: string, sessions: ChatSession[], activeSessionId: string | null) {
+  writeStorage(getStorageKey(CHAT_SESSIONS_KEY, documentId), sessions);
+  writeStorage(getStorageKey(CHAT_ACTIVE_SESSION_KEY, documentId), activeSessionId);
+}
+
+export function loadCachedChatMessages(documentId: string): Message[] {
+  const { sessions, activeSessionId } = loadCachedChatSessions(documentId);
+  if (sessions.length === 0) return [];
+
+  return sessions.find((session) => session.id === activeSessionId)?.messages ?? sessions[0].messages;
+}
+
 export function saveCachedChatMessages(documentId: string, messages: Message[]) {
-  writeStorage(getStorageKey(CHAT_MESSAGES_KEY, documentId), messages);
+  const now = Date.now();
+  const fallbackSession: ChatSession = {
+    id: 'legacy-session',
+    title: deriveChatSessionTitle(messages),
+    createdAt: now,
+    updatedAt: now,
+    messages: messages.length > 0 ? messages : cloneDefaultChatMessages(),
+  };
+
+  saveCachedChatSessions(documentId, [fallbackSession], fallbackSession.id);
 }
 
 function isAnnotationPoint(value: unknown): value is AnnotationStroke['points'][number] {
