@@ -3,6 +3,11 @@ export const MAX_PDF_SCALE = 3;
 const LINE_HEIGHT_IN_PIXELS = 16;
 const EDGE_TOLERANCE_IN_PIXELS = 2;
 
+export interface BoundaryPageTurnPrime {
+  pageNumber: number;
+  direction: -1 | 1;
+}
+
 export function clampPdfScale(scale: number) {
   return Math.min(MAX_PDF_SCALE, Math.max(MIN_PDF_SCALE, Math.round(scale * 100) / 100));
 }
@@ -39,4 +44,54 @@ export function isScrollAtGestureBoundary({
   }
 
   return scrollTop + clientHeight >= scrollHeight - EDGE_TOLERANCE_IN_PIXELS;
+}
+
+export function getBoundaryPageTurnIntent({
+  prime,
+  pageNumber,
+  direction,
+  isNewGesture,
+}: {
+  prime: BoundaryPageTurnPrime | null;
+  pageNumber: number;
+  direction: -1 | 1;
+  isNewGesture: boolean;
+}) {
+  const nextPrime = { pageNumber, direction } satisfies BoundaryPageTurnPrime;
+
+  if (!prime || prime.pageNumber !== pageNumber || prime.direction !== direction) {
+    return {
+      shouldTurnPage: false,
+      nextPrime,
+    };
+  }
+
+  return {
+    shouldTurnPage: isNewGesture,
+    nextPrime,
+  };
+}
+
+export function getBoundaryCaptureScrollTop({
+  scrollTop,
+  clientHeight,
+  scrollHeight,
+  deltaY,
+}: {
+  scrollTop: number;
+  clientHeight: number;
+  scrollHeight: number;
+  deltaY: number;
+}) {
+  const maxScrollTop = Math.max(0, scrollHeight - clientHeight);
+
+  if (deltaY < 0 && scrollTop + deltaY <= 0) {
+    return 0;
+  }
+
+  if (deltaY > 0 && scrollTop + deltaY >= maxScrollTop) {
+    return maxScrollTop;
+  }
+
+  return null;
 }

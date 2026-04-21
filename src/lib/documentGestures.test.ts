@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   clampPdfScale,
+  getBoundaryCaptureScrollTop,
+  getBoundaryPageTurnIntent,
   getPdfScaleFromPinchGesture,
   isScrollAtGestureBoundary,
   normalizeWheelDelta,
@@ -53,5 +55,95 @@ test('isScrollAtGestureBoundary detects top and bottom edges of the render viewp
       direction: 1,
     }),
     false,
+  );
+});
+
+test('getBoundaryPageTurnIntent blocks the first boundary scroll and turns on the next gesture', () => {
+  const firstAttempt = getBoundaryPageTurnIntent({
+    prime: null,
+    pageNumber: 3,
+    direction: 1,
+    isNewGesture: true,
+  });
+
+  assert.equal(firstAttempt.shouldTurnPage, false);
+  assert.deepEqual(firstAttempt.nextPrime, { pageNumber: 3, direction: 1 });
+
+  const continuedGesture = getBoundaryPageTurnIntent({
+    prime: firstAttempt.nextPrime,
+    pageNumber: 3,
+    direction: 1,
+    isNewGesture: false,
+  });
+
+  assert.equal(continuedGesture.shouldTurnPage, false);
+  assert.deepEqual(continuedGesture.nextPrime, { pageNumber: 3, direction: 1 });
+
+  const secondAttempt = getBoundaryPageTurnIntent({
+    prime: continuedGesture.nextPrime,
+    pageNumber: 3,
+    direction: 1,
+    isNewGesture: true,
+  });
+
+  assert.equal(secondAttempt.shouldTurnPage, true);
+  assert.deepEqual(secondAttempt.nextPrime, { pageNumber: 3, direction: 1 });
+});
+
+test('getBoundaryPageTurnIntent re-primes when the boundary direction or page changes', () => {
+  const directionChange = getBoundaryPageTurnIntent({
+    prime: { pageNumber: 3, direction: 1 },
+    pageNumber: 3,
+    direction: -1,
+    isNewGesture: true,
+  });
+
+  assert.equal(directionChange.shouldTurnPage, false);
+  assert.deepEqual(directionChange.nextPrime, { pageNumber: 3, direction: -1 });
+
+  const pageChange = getBoundaryPageTurnIntent({
+    prime: { pageNumber: 3, direction: 1 },
+    pageNumber: 4,
+    direction: 1,
+    isNewGesture: true,
+  });
+
+  assert.equal(pageChange.shouldTurnPage, false);
+  assert.deepEqual(pageChange.nextPrime, { pageNumber: 4, direction: 1 });
+});
+
+test('getBoundaryCaptureScrollTop captures a large downward wheel to the bottom boundary', () => {
+  assert.equal(
+    getBoundaryCaptureScrollTop({
+      scrollTop: 700,
+      clientHeight: 600,
+      scrollHeight: 1600,
+      deltaY: 500,
+    }),
+    1000,
+  );
+});
+
+test('getBoundaryCaptureScrollTop captures a large upward wheel to the top boundary', () => {
+  assert.equal(
+    getBoundaryCaptureScrollTop({
+      scrollTop: 250,
+      clientHeight: 600,
+      scrollHeight: 1600,
+      deltaY: -400,
+    }),
+    0,
+  );
+});
+
+test('getBoundaryCaptureScrollTop ignores wheels that do not reach a boundary', () => {
+  assert.equal(
+    getBoundaryCaptureScrollTop({
+      scrollTop: 250,
+      clientHeight: 600,
+      scrollHeight: 1600,
+      deltaY: 100,
+    }),
+    null,
   );
 });

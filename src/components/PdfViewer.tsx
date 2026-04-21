@@ -37,7 +37,10 @@ import {
   saveCachedPdfScale,
 } from '../lib/documentCache';
 import {
+  type BoundaryPageTurnPrime,
   clampPdfScale,
+  getBoundaryCaptureScrollTop,
+  getBoundaryPageTurnIntent,
   getPdfScaleFromPinchGesture,
   isScrollAtGestureBoundary,
   normalizeWheelDelta,
@@ -53,8 +56,7 @@ interface PdfViewerProps {
 }
 
 const TOOLBAR_COLORS = ['#2563eb', '#111827', '#ef4444', '#16a34a', '#f59e0b', '#a855f7'];
-const PAGE_GESTURE_THRESHOLD = 96;
-const PAGE_GESTURE_COOLDOWN_MS = 320;
+const PAGE_BOUNDARY_GESTURE_GAP_MS = 180;
 const FLOATING_TOOLBAR_PADDING = 16;
 const FLOATING_TOOLBAR_DEFAULT_POSITION = { x: 24, y: FLOATING_TOOLBAR_PADDING };
 const FLOATING_TOOLBAR_FALLBACK_WIDTH = 320;
@@ -161,8 +163,8 @@ export function PdfViewer({ file }: PdfViewerProps) {
   const documentCacheId = useMemo(() => getDocumentCacheId(file), [file]);
   const draftStrokeRef = useRef<AnnotationStroke | null>(null);
   const isPointerActiveRef = useRef(false);
-  const wheelGestureDeltaRef = useRef(0);
-  const lastWheelGestureAtRef = useRef(0);
+  const lastBoundaryWheelAtRef = useRef(0);
+  const boundaryPageTurnPrimeRef = useRef<BoundaryPageTurnPrime | null>(null);
   const pendingPageAnchorRef = useRef<'top' | 'bottom' | null>(null);
   const gestureStartScaleRef = useRef<number | null>(null);
   const lastSafariGestureScaleRef = useRef(1);
@@ -208,8 +210,8 @@ export function PdfViewer({ file }: PdfViewerProps) {
     setDraftStroke(null);
     draftStrokeRef.current = null;
     floatingToolbarDragRef.current = null;
-    wheelGestureDeltaRef.current = 0;
-    lastWheelGestureAtRef.current = 0;
+    lastBoundaryWheelAtRef.current = 0;
+    boundaryPageTurnPrimeRef.current = null;
     pendingPageAnchorRef.current = null;
     gestureStartScaleRef.current = null;
     lastSafariGestureScaleRef.current = 1;
@@ -462,7 +464,7 @@ export function PdfViewer({ file }: PdfViewerProps) {
 
     if (event.ctrlKey) {
       event.preventDefault();
-      wheelGestureDeltaRef.current = 0;
+      boundaryPageTurnPrimeRef.current = null;
       setScale((currentScale) =>
         getPdfScaleFromPinchGesture(
           currentScale,
@@ -473,7 +475,7 @@ export function PdfViewer({ file }: PdfViewerProps) {
     }
 
     if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) {
-      wheelGestureDeltaRef.current = 0;
+      boundaryPageTurnPrimeRef.current = null;
       return;
     }
 
@@ -486,37 +488,54 @@ export function PdfViewer({ file }: PdfViewerProps) {
 
     const canMoveToPreviousPage = direction < 0 && pageNumber > 1;
     const canMoveToNextPage = direction > 0 && numPages !== null && pageNumber < numPages;
+    const gestureDirection = direction < 0 ? -1 : 1;
     const isAtBoundary = isScrollAtGestureBoundary({
       scrollTop: container.scrollTop,
       clientHeight: container.clientHeight,
       scrollHeight: container.scrollHeight,
-      direction: direction < 0 ? -1 : 1,
+      direction: gestureDirection,
+    });
+    const boundaryCaptureScrollTop = getBoundaryCaptureScrollTop({
+      scrollTop: container.scrollTop,
+      clientHeight: container.clientHeight,
+      scrollHeight: container.scrollHeight,
+      deltaY: normalizedDeltaY,
     });
 
-    if ((!canMoveToPreviousPage && !canMoveToNextPage) || !isAtBoundary) {
-      wheelGestureDeltaRef.current = 0;
+    if (!canMoveToPreviousPage && !canMoveToNextPage) {
+      boundaryPageTurnPrimeRef.current = null;
+      return;
+    }
+
+    if (!isAtBoundary && boundaryCaptureScrollTop === null) {
+      boundaryPageTurnPrimeRef.current = null;
       return;
     }
 
     event.preventDefault();
 
-    if (Math.sign(wheelGestureDeltaRef.current) !== direction) {
-      wheelGestureDeltaRef.current = 0;
+    if (!isAtBoundary && boundaryCaptureScrollTop !== null) {
+      container.scrollTop = boundaryCaptureScrollTop;
     }
-
-    wheelGestureDeltaRef.current += normalizedDeltaY;
 
     const now = window.performance.now();
-    if (now - lastWheelGestureAtRef.current < PAGE_GESTURE_COOLDOWN_MS) {
+    const isNewGesture = now - lastBoundaryWheelAtRef.current > PAGE_BOUNDARY_GESTURE_GAP_MS;
+    lastBoundaryWheelAtRef.current = now;
+
+    const { shouldTurnPage, nextPrime } = getBoundaryPageTurnIntent({
+      prime: boundaryPageTurnPrimeRef.current,
+      pageNumber,
+      direction: gestureDirection,
+      isNewGesture,
+    });
+
+    boundaryPageTurnPrimeRef.current = nextPrime;
+
+    if (!shouldTurnPage) {
       return;
     }
 
-    if (Math.abs(wheelGestureDeltaRef.current) < PAGE_GESTURE_THRESHOLD) {
-      return;
-    }
-
-    lastWheelGestureAtRef.current = now;
-    wheelGestureDeltaRef.current = 0;
+    boundaryPageTurnPrimeRef.current = null;
     pendingPageAnchorRef.current = direction > 0 ? 'top' : 'bottom';
 
     if (direction > 0) {
@@ -902,7 +921,8 @@ export function PdfViewer({ file }: PdfViewerProps) {
 
   useEffect(() => {
     if (!isGestureCaptureActive) {
-      wheelGestureDeltaRef.current = 0;
+      lastBoundaryWheelAtRef.current = 0;
+      boundaryPageTurnPrimeRef.current = null;
       pendingPageAnchorRef.current = null;
       gestureStartScaleRef.current = null;
       lastSafariGestureScaleRef.current = 1;
